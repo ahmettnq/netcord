@@ -1,12 +1,11 @@
 # Codemagic: builds Netcord on a cloud Mac and uploads it to TestFlight.
-# Before the first run, fill in the two values marked FILL IN (see README.md).
 workflows:
   ios-release:
     name: Netcord iOS (TestFlight)
     max_build_duration: 60
     instance_type: mac_mini_m2
     integrations:
-      app_store_connect: FILL_IN_API_KEY_NAME     # FILL IN: the App Store Connect API key name you use in Codemagic (same as Hivelock)
+      app_store_connect: Netcord
     environment:
       ios_signing:
         distribution_type: app_store
