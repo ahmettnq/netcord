@@ -9,9 +9,6 @@ workflows:
     environment:
       groups:
         - signing
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.tnqnexus.netcord
       vars:
         APP_STORE_APPLE_ID: 6827735993
         XCODE_PROJECT: ios/Netcord.xcodeproj
@@ -25,8 +22,11 @@ workflows:
         script: |
           brew install xcodegen
           cd ios && xcodegen generate
-      - name: Apply signing profiles
+      - name: Create signing certificate and profile
         script: |
+          keychain initialize
+          app-store-connect fetch-signing-files "com.tnqnexus.netcord" --type IOS_APP_STORE --create
+          keychain add-certificates
           xcode-project use-profiles --project "$XCODE_PROJECT"
       - name: Set the build number
         script: |
