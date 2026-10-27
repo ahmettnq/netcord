@@ -1,0 +1,39 @@
+# XcodeGen spec. Codemagic turns this into Netcord.xcodeproj on every build,
+# so there is no Xcode project to keep in sync by hand (and no Mac needed).
+name: Netcord
+options:
+  bundleIdPrefix: com.tnqnexus
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    VERSIONING_SYSTEM: apple-generic
+    SWIFT_VERSION: "5.0"
+    TARGETED_DEVICE_FAMILY: "1"
+targets:
+  Netcord:
+    type: application
+    platform: iOS
+    sources:
+      - path: Netcord/App
+      - path: Netcord/Resources/Assets.xcassets
+      - path: Netcord/Resources/PrivacyInfo.xcprivacy
+        buildPhase: resources
+      - path: Netcord/Resources/www
+        type: folder
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_NAME: Netcord
+        PRODUCT_BUNDLE_IDENTIFIER: com.tnqnexus.netcord
+        INFOPLIST_FILE: Netcord/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SUPPORTS_MACCATALYST: NO
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+        SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
+        ENABLE_BITCODE: NO
+    scheme: {}

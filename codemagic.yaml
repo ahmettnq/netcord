@@ -1,0 +1,44 @@
+# Codemagic: builds Netcord on a cloud Mac and uploads it to TestFlight.
+# Before the first run, fill in the two values marked FILL IN (see README.md).
+workflows:
+  ios-release:
+    name: Netcord iOS (TestFlight)
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: FILL_IN_API_KEY_NAME     # FILL IN: the App Store Connect API key name you use in Codemagic (same as Hivelock)
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.tnqnexus.netcord
+      vars:
+        APP_STORE_APPLE_ID: 0000000000             # FILL IN: App Store Connect > Netcord > App Information > Apple ID
+        XCODE_PROJECT: ios/Netcord.xcodeproj
+        XCODE_SCHEME: Netcord
+      xcode: latest
+    scripts:
+      - name: Build the game into the app bundle
+        script: |
+          python3 web/build.py --out ios/Netcord/Resources/www/index.html
+      - name: Generate the Xcode project
+        script: |
+          brew install xcodegen
+          cd ios && xcodegen generate
+      - name: Apply signing profiles
+        script: |
+          xcode-project use-profiles --project "$XCODE_PROJECT"
+      - name: Set the build number
+        script: |
+          LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID" 2>/dev/null || echo 0)
+          cd ios && agvtool new-version -all $(($LATEST + 1))
+      - name: Build the .ipa
+        script: |
+          xcode-project build-ipa --project "$XCODE_PROJECT" --scheme "$XCODE_SCHEME"
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        submit_to_app_store: false
