@@ -12,7 +12,7 @@ workflows:
         distribution_type: app_store
         bundle_identifier: com.tnqnexus.netcord
       vars:
-        APP_STORE_APPLE_ID: 0000000000             # FILL IN: App Store Connect > Netcord > App Information > Apple ID
+        APP_STORE_APPLE_ID: 6827735993
         XCODE_PROJECT: ios/Netcord.xcodeproj
         XCODE_SCHEME: Netcord
       xcode: latest
