@@ -453,7 +453,7 @@ const TUT = {
   show() {
     const T = [
       ['STEP 1 OF 3 · SERVE', 'Tap the big <b>TOSS</b> button. Then tap again when the circle over the ball turns <b>gold</b>.'],
-      ['STEP 2 OF 3 · RALLY', `Your player runs for you. When the ball comes back, tap a shot button as the circle turns <b>gold</b>. Returns: <b>${this.hits} / 3</b>`],
+      ['STEP 2 OF 3 · RALLY', `Your player runs for you. When the ball comes back, tap a shot button. Early is fine, the swing waits. <b>Gold</b> means perfect. Returns: <b>${this.hits} / 3</b>`],
       ['STEP 3 OF 3 · DONE', 'Great hitting. Get ready for your first match.']
     ][this.step];
     $('ck-step').textContent = T[0]; $('ck-text').innerHTML = T[1];

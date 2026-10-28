@@ -131,6 +131,24 @@ function rigSpots() {
 }
 
 const _matCache = new Map();
+let _toonGrad = null;
+function tmat(c) {
+  c = c | 0; const key = 't' + c;
+  if (!_matCache.has(key)) {
+    if (!_toonGrad) { const d = new Uint8Array([90, 170, 235, 255]); _toonGrad = new THREE.DataTexture(d, 4, 1, THREE.RedFormat); _toonGrad.minFilter = _toonGrad.magFilter = THREE.NearestFilter; _toonGrad.needsUpdate = true; }
+    _matCache.set(key, new THREE.MeshToonMaterial({ color: c, gradientMap: _toonGrad }));
+  }
+  return _matCache.get(key);
+}
+const lathe = (pts, seg = 18) => new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(r, y)), seg);
+Object.assign(GEO, {
+  // tapered limb, 1 unit long hanging down from y=0, radius 0.1 at the top
+  limb: lathe([[0, 0.04], [0.07, 0.02], [0.1, -0.08], [0.095, -0.4], [0.08, -0.8], [0.07, -0.96], [0, -1.02]], 12),
+  shorts: lathe([[0, 0.12], [0.17, 0.1], [0.22, 0.02], [0.235, -0.08], [0.25, -0.16], [0, -0.16]], 18),
+  torsoToy: lathe([[0, -0.08], [0.22, -0.06], [0.27, 0.06], [0.3, 0.22], [0.3, 0.4], [0.26, 0.52], [0.13, 0.58], [0, 0.585]], 20),
+  torsoAth: lathe([[0, -0.08], [0.19, -0.06], [0.205, 0.08], [0.25, 0.28], [0.29, 0.44], [0.27, 0.53], [0.13, 0.58], [0, 0.585]], 20),
+  band: new THREE.CylinderGeometry(0.3, 0.3, 1, 20, 1, true)
+});
 function lmat(c) { c = c | 0; if (!_matCache.has(c)) _matCache.set(c, new THREE.MeshLambertMaterial({ color: c })); return _matCache.get(c); }
 function shadeHex(c, k) { return (Math.min(255, ((c >> 16) & 255) * k) << 16) | (Math.min(255, ((c >> 8) & 255) * k) << 8) | Math.min(255, (c & 255) * k); }
 function part(geo, color, x, y, z, sx = 1, sy = 1, sz = 1) {
@@ -154,61 +172,79 @@ class Character {
      hair, a polo shirt and shorts, socks and shoes, and a racket with a
      real oval frame. Joint layout matches the stroke animations. */
   build() {
-    const L = this.look, S = GEO.sph, C = GEO.cap, Y = GEO.cyl8;
+    const L = this.look, style = (typeof window !== 'undefined' && window.CHAR_STYLE) || 'toy';
+    const toy = style === 'toy';
+    const S = GEO.sph, C = GEO.cap, Y = GEO.cyl8;
+    const M = c => tmat(c), pt = (geo, color, x, y, z, sx = 1, sy = 1, sz = 1) => { const m = new THREE.Mesh(geo, M(color)); m.position.set(x, y, z); m.scale.set(sx, sy, sz); m.castShadow = true; return m; };
+    const skinD = shadeHex(L.skin, 0.86), trim = L.trim || 0xf4efe4, shoe = L.shoe || 0xf6f4ef, hairC = L.hair;
     const root = this.root = new THREE.Group(); root.scale.setScalar(1.28);
     const body = this.body = new THREE.Group(); root.add(body);
     if (this.lefty) body.scale.x = -1;
     const hips = this.hips = new THREE.Group(); hips.position.y = 0.95; body.add(hips);
-    hips.add(part(S, L.shorts, 0, -0.05, 0, 0.215, 0.15, 0.15));
+    // shorts: a flared tube over the hips
+    hips.add(pt(GEO.shorts, L.shorts, 0, -0.07, 0, toy ? 1.08 : 0.94, 1, toy ? 0.9 : 0.8));
+    const soles = [];
     const leg = (side) => {
       const th = new THREE.Group(); th.position.set(side * 0.11, -0.12, 0); hips.add(th);
-      th.add(part(S, L.shorts, 0, -0.06, 0, 0.11, 0.13, 0.115));
-      th.add(part(C, L.skin, 0, -0.27, 0, 0.13, 0.2, 0.135));
+      th.add(pt(Y, L.shorts, 0, -0.07, 0, toy ? 0.125 : 0.11, 0.16, toy ? 0.125 : 0.11));      // short leg opening
+      th.add(pt(GEO.limb, L.skin, 0, -0.06, 0, toy ? 1.2 : 0.95, 0.36, toy ? 1.2 : 0.95));    // thigh (tapered)
       const kn = new THREE.Group(); kn.position.y = -0.42; th.add(kn);
-      kn.add(part(C, L.skin, 0, -0.15, 0, 0.11, 0.2, 0.115));
-      kn.add(part(Y, 0xf4f1ea, 0, -0.33, 0, 0.058, 0.09, 0.058));
-      kn.add(part(S, L.shoe || 0xf6f4ef, 0, -0.405, 0.045, 0.075, 0.055, 0.14));
-      kn.add(part(S, L.trim || 0x2b2f33, 0, -0.44, 0.045, 0.078, 0.022, 0.142));
+      kn.add(pt(GEO.limb, L.skin, 0, 0, 0, toy ? 1.05 : 0.8, 0.31, toy ? 1.05 : 0.8));        // shin
+      kn.add(pt(Y, 0xf7f5ef, 0, -0.33, 0, toy ? 0.066 : 0.052, 0.09, toy ? 0.066 : 0.052));   // sock
+      // shoe: rounded upper, contrasting sole, a toe cap
+      const sh = new THREE.Group(); sh.position.set(0, -0.405, toy ? 0.055 : 0.045); kn.add(sh);
+      sh.add(pt(S, shoe, 0, 0.005, 0, toy ? 0.095 : 0.072, toy ? 0.07 : 0.05, toy ? 0.17 : 0.145));
+      sh.add(pt(S, L.trim2 || L.shorts, toy ? 0.0 : 0, 0.02, -0.04, toy ? 0.097 : 0.074, toy ? 0.045 : 0.032, toy ? 0.09 : 0.07));
+      const sole = pt(GEO.box, 0x2b2f33, 0, -0.035, 0.005, toy ? 0.17 : 0.13, 0.024, toy ? 0.33 : 0.28); sh.add(sole);
+      soles.push({ g: kn, y: -0.405 - 0.035 - 0.012, z: (toy ? 0.055 : 0.045), half: toy ? 0.15 : 0.125 });
       return [th, kn];
     };
     [this.thR, this.knR] = leg(-1); [this.thL, this.knL] = leg(1);
     const tor = this.tor = new THREE.Group(); hips.add(tor);
-    tor.add(part(C, L.shirt, 0, 0.3, 0, 0.42, 0.25, 0.25));
-    tor.add(part(S, L.shirt, 0, 0.5, 0, 0.25, 0.1, 0.14));
-    tor.add(part(S, L.trim || 0xf4efe4, 0, 0.585, 0.045, 0.085, 0.03, 0.07));          // collar
-    tor.add(part(S, L.trim || 0xf4efe4, 0.12, 0.42, 0.118, 0.03, 0.03, 0.01));         // badge
-    const head = this.head = new THREE.Group(); head.position.y = 0.64; tor.add(head);
-    head.add(part(Y, L.skin, 0, 0.02, 0, 0.055, 0.08, 0.055));                         // neck
-    head.add(part(S, L.skin, 0, 0.17, 0, 0.145, 0.16, 0.145));
-    head.add(part(S, L.hair, 0, 0.2, -0.025, 0.15, 0.13, 0.148));
-    for (const sx of [-1, 1]) head.add(part(S, L.skin, sx * 0.145, 0.16, 0, 0.02, 0.035, 0.025)); // ears
-    if (L.cap != null) {
-      head.add(part(S, L.cap, 0, 0.245, -0.005, 0.16, 0.1, 0.16));
-      head.add(part(Y, L.cap, 0, 0.235, 0.14, 0.11, 0.012, 0.1));
+    // shirt: a lathed body, broad at the chest (athletic) or round (toy)
+    tor.add(pt(toy ? GEO.torsoToy : GEO.torsoAth, L.shirt, 0, 0.02, 0, 1, 1, toy ? 0.78 : 0.66));
+    tor.add(pt(Y, trim, 0, 0.555, 0.0, 0.1, 0.04, 0.08));                                       // collar band
+    tor.add(pt(GEO.box, trim, 0, 0.5, 0.115, 0.06, 0.08, 0.012));                              // placket
+    // a stripe across the chest in the trim colour
+    tor.add(pt(GEO.band, trim, 0, toy ? 0.36 : 0.38, 0, toy ? 1.01 : 0.93, 0.06, toy ? 0.79 : 0.62));
+    const head = this.head = new THREE.Group(); head.position.y = toy ? 0.56 : 0.63; tor.add(head);
+    head.add(pt(Y, skinD, 0, 0.02, 0, 0.06, 0.1, 0.06));                                         // neck
+    const hr = toy ? 0.25 : 0.13, hy = toy ? 0.24 : 0.17;
+    head.add(pt(S, L.skin, 0, hy, 0.005, hr, hr * (toy ? 0.96 : 1.12), hr * 0.98));
+    for (const sx of [-1, 1]) head.add(pt(S, L.skin, sx * hr * 0.98, hy - 0.01, -0.005, 0.03, 0.045, 0.03)); // ears
+    // face: eyes with a highlight, brows, a little nose and cheeks
+    const ez = hr * 0.93, ey = hy - (toy ? 0.015 : 0.0), ex = toy ? 0.09 : 0.046;
+    for (const sx of [-1, 1]) {
+      head.add(pt(S, 0x1b1410, sx * ex, ey, ez, toy ? 0.034 : 0.016, toy ? 0.046 : 0.021, 0.014));
+      if (toy) head.add(pt(S, 0xffffff, sx * ex + 0.011, ey + 0.016, ez + 0.011, 0.011, 0.011, 0.004));
+      head.add(pt(GEO.box, shadeHex(hairC, 1.1), sx * ex, ey + (toy ? 0.06 : 0.04), ez - 0.004, toy ? 0.05 : 0.036, 0.012, 0.01));
+      if (toy) head.add(pt(S, 0xf08a7a, sx * 0.145, hy - 0.08, hr * 0.84, 0.036, 0.02, 0.01));      // cheeks
     }
-    head.add(part(S, 0x1a1a1a, -0.05, 0.17, 0.141, 0.016, 0.02, 0.008)); head.add(part(S, 0x1a1a1a, 0.05, 0.17, 0.141, 0.016, 0.02, 0.008));
-    head.add(part(S, shadeHex(L.skin, 0.9), 0, 0.13, 0.145, 0.018, 0.022, 0.014));
+    head.add(pt(S, shadeHex(L.skin, 0.92), 0, hy - (toy ? 0.035 : 0.025), ez + 0.01, toy ? 0.026 : 0.018, toy ? 0.02 : 0.024, 0.016));
+    head.add(pt(GEO.box, shadeHex(L.skin, 0.62), 0, hy - (toy ? 0.09 : 0.065), ez - 0.012, toy ? 0.05 : 0.034, 0.01, 0.01));   // mouth
+    this.buildHair(head, hr, hy, L, toy, pt);
     const arm = (side) => {
       const sh = new THREE.Group(); sh.position.set(side * 0.255, 0.5, 0); tor.add(sh);
-      sh.add(part(S, L.shirt, 0, -0.05, 0, 0.07, 0.085, 0.07));
-      sh.add(part(C, L.skin, 0, -0.17, 0, 0.095, 0.17, 0.095));
+      sh.add(pt(S, L.shirt, 0, -0.04, 0, toy ? 0.1 : 0.085, toy ? 0.11 : 0.095, toy ? 0.1 : 0.085));  // shoulder
+      sh.add(pt(Y, L.shirt, 0, -0.1, 0, toy ? 0.095 : 0.078, 0.1, toy ? 0.095 : 0.078));            // short sleeve
+      sh.add(pt(GEO.limb, L.skin, 0, -0.12, 0, toy ? 0.9 : 0.72, 0.19, toy ? 0.9 : 0.72));          // upper arm
       const el = new THREE.Group(); el.position.y = -0.29; sh.add(el);
-      el.add(part(C, L.skin, 0, -0.12, 0, 0.085, 0.18, 0.085));
-      if (side < 0) el.add(part(Y, L.trim || 0xf4f1ea, 0, -0.2, 0, 0.05, 0.05, 0.05));
+      el.add(pt(GEO.limb, L.skin, 0, 0, 0, toy ? 0.82 : 0.64, 0.25, toy ? 0.82 : 0.64));           // forearm
+      if (side < 0) el.add(pt(Y, trim, 0, -0.205, 0, toy ? 0.062 : 0.05, 0.06, toy ? 0.062 : 0.05)); // wristband
       const wr = new THREE.Group(); wr.position.y = -0.27; el.add(wr);
-      wr.add(part(S, L.skin, 0, -0.035, 0, 0.05, 0.055, 0.045));
+      wr.add(pt(S, L.skin, 0, -0.035, 0, toy ? 0.068 : 0.048, toy ? 0.072 : 0.056, toy ? 0.062 : 0.045)); // hand
       return [sh, el, wr];
     };
     [this.shR, this.elR, this.wrR] = arm(-1); [this.shL, this.elL, this.wrL] = arm(1);
     // racket: grip, throat and an oval frame with strings (frame in the y-z plane)
     const r = this.racket = new THREE.Group(); r.position.y = -0.06; this.wrR.add(r);
     const rc = L.racket || 0xc8382e;
-    r.add(part(Y, 0x2a2a2a, 0, -0.1, 0, 0.02, 0.22, 0.02));
-    r.add(part(Y, rc, 0, -0.27, 0, 0.014, 0.14, 0.014));
+    r.add(pt(Y, 0x2a2a2a, 0, -0.1, 0, 0.022, 0.22, 0.022));
+    r.add(pt(Y, rc, 0, -0.27, 0, 0.016, 0.14, 0.016));
     const hoop = new THREE.Group(); hoop.position.y = -0.48; r.add(hoop);
-    const ring = new THREE.Mesh(GEO.hoop, lmat(rc)); ring.rotation.y = Math.PI / 2; ring.scale.set(0.13, 0.175, 0.13); ring.castShadow = true; hoop.add(ring);
-    const strings = new THREE.Mesh(GEO.disc, new THREE.MeshLambertMaterial({ color: 0xf2efe6, transparent: true, opacity: 0.45, side: THREE.DoubleSide }));
-    strings.rotation.y = Math.PI / 2; strings.scale.set(0.125, 0.168, 1); hoop.add(strings);
+    const ring = new THREE.Mesh(GEO.hoop, M(rc)); ring.rotation.y = Math.PI / 2; ring.scale.set(0.135, 0.18, 0.16); ring.castShadow = true; hoop.add(ring);
+    const strings = new THREE.Mesh(GEO.disc, new THREE.MeshLambertMaterial({ color: 0xf2efe6, transparent: true, opacity: 0.5, side: THREE.DoubleSide }));
+    strings.rotation.y = Math.PI / 2; strings.scale.set(0.13, 0.172, 1); hoop.add(strings);
     // soft contact shadow under the feet so the figure reads as standing on the court
     const blob = this.blob = new THREE.Group();
     for (const [r, o] of [[0.62, 0.13], [0.44, 0.14], [0.27, 0.16]]) {
@@ -217,8 +253,32 @@ class Character {
     }
     blob.position.y = 0.03;
     root.add(blob);
-    this._sole = [this.knR.children[3], this.knL.children[3]];
+    this._sole = soles;
     this.applyPose();
+  }
+  /* hair shapes: short crop, ponytail, bun, curls or a buzz, under an optional cap */
+  buildHair(head, hr, hy, L, toy, pt) {
+    const S = GEO.sph, h = L.hair, st = L.hairStyle || 'short';
+    if (st === 'curls') {
+      for (let i = 0; i < 14; i++) {
+        const a = (i / 14) * Math.PI * 2, up = i % 2 ? 0.55 : 0.85;
+        head.add(pt(S, h, Math.sin(a) * hr * 0.78, hy + hr * up * 0.75, Math.cos(a) * hr * 0.7 - hr * 0.12, hr * 0.42, hr * 0.42, hr * 0.42));
+      }
+      head.add(pt(S, h, 0, hy + hr * 0.45, -hr * 0.1, hr * 1.02, hr * 0.85, hr * 0.98));
+    } else if (st !== 'buzz') {
+      head.add(pt(S, h, 0, hy + hr * 0.2, -hr * 0.1, hr * 1.06, hr * 0.92, hr * 1.02));              // the hair cap over the skull
+      head.add(pt(S, h, 0, hy + hr * 0.62, hr * 0.45, hr * 0.8, hr * 0.32, hr * 0.5));             // fringe
+    } else head.add(pt(S, h, 0, hy + hr * 0.18, -hr * 0.05, hr * 1.02, hr * 0.9, hr * 1.0));
+    if (st === 'pony') {
+      head.add(pt(S, h, 0, hy + hr * 0.1, -hr * 1.05, hr * 0.32, hr * 0.32, hr * 0.32));
+      head.add(pt(GEO.cap, h, 0, hy - hr * 0.35, -hr * 1.2, hr * 0.38, hr * 1.1, hr * 0.38));
+    }
+    if (st === 'bun') head.add(pt(S, h, 0, hy + hr * 0.95, -hr * 0.45, hr * 0.42, hr * 0.38, hr * 0.42));
+    if (L.cap != null) {
+      // a cap that sits back on the head so the face stays visible from the high camera
+      head.add(pt(S, L.cap, 0, hy + hr * 0.62, -hr * 0.08, hr * 1.0, hr * 0.56, hr * 0.98));       // crown
+      const bill = pt(GEO.cyl8, L.cap, 0, hy + hr * 0.62, hr * 0.72, hr * 0.62, 0.014, hr * 0.42); bill.rotation.x = -0.32; head.add(bill);
+    } else if (L.band != null) head.add(pt(GEO.cyl8, L.band, 0, hy + hr * 0.42, 0, hr * 1.07, hr * 0.2, hr * 1.06));
   }
   /* Keep the lowest sole on the court: whatever the legs and hips are doing,
      shift the whole body so one foot is always planted (jumps go through the
@@ -228,8 +288,8 @@ class Character {
     this.body.position.y = 0;
     this.root.updateMatrixWorld(true);
     let mn = Infinity;
-    for (const t of this._sole) for (const z of [-0.068, 0.068]) {
-      v.set(0, -0.011, z); t.localToWorld(v); this.root.worldToLocal(v); if (v.y < mn) mn = v.y;
+    for (const so of this._sole) for (const dz of [-0.01, 0.01]) {   // the ball of each foot (sampling toe and heel makes the body pump with every knee angle)
+      v.set(0, so.y, so.z + dz); so.g.localToWorld(v); this.root.worldToLocal(v); if (v.y < mn) mn = v.y;
     }
     if (mn < Infinity) { this.body.position.y = -mn; this.root.updateMatrixWorld(true); }
   }
@@ -367,26 +427,44 @@ class Character {
     const sp = Math.hypot(this.vel.x, this.vel.z);
     const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
     const fwd = (this.vel.x * fx + this.vel.z * fz), lat = (this.vel.x * fz - this.vel.z * fx);
+    // acceleration in the body frame, smoothed: lean into starts, sit back into stops
+    const lv = this._lv || (this._lv = { x: 0, z: 0, f: 0, l: 0 });
+    const af = clamp(((this.vel.x - lv.x) * fx + (this.vel.z - lv.z) * fz) / Math.max(dt, 1e-3), -40, 40);
+    const al = clamp(((this.vel.x - lv.x) * fz - (this.vel.z - lv.z) * fx) / Math.max(dt, 1e-3), -40, 40);
+    lv.x = this.vel.x; lv.z = this.vel.z; lv.f += (af - lv.f) * Math.min(1, dt * 10); lv.l += (al - lv.l) * Math.min(1, dt * 10);
+    T[CI.torRx] += clamp(lv.f * 0.012, -0.22, 0.3); T[CI.torRz] += clamp(-lv.l * 0.01, -0.2, 0.2);
     if (sp > 0.25) {
       const k = clamp(sp / 5.5, 0, 1);
       const lastPh = this.runPh;
-      this.runPh += dt * (6 + sp * 1.9);
+      this.runPh += dt * (7 + sp * 1.7);
       if (Math.floor(lastPh / Math.PI) !== Math.floor(this.runPh / Math.PI)) { this.stepCount++; this.onStep && this.onStep(); }
       const s = Math.sin(this.runPh), c = Math.cos(this.runPh);
       const fk = Math.abs(fwd) / (sp + 1e-3), lk = Math.abs(lat) / (sp + 1e-3);
-      const A = 0.25 + 0.75 * k, dirF = Math.sign(fwd) || 1;
-      T[CI.thRx] += (-s * 0.95 * A * fk) * dirF; T[CI.thLx] += (s * 0.95 * A * fk) * dirF;
-      T[CI.knR] += Math.max(0, c) * 1.1 * A * fk + 0.2 * lk; T[CI.knL] += Math.max(0, -c) * 1.1 * A * fk + 0.2 * lk;
-      // side shuffle
-      T[CI.thRz] += -Math.max(0, s) * 0.45 * A * lk; T[CI.thLz] += Math.max(0, -s) * 0.45 * A * lk;
-      T[CI.hipY] += -Math.abs(c) * 0.06 * A - 0.03 * lk;
-      T[CI.torRx] += fwd * 0.035; T[CI.torRz] += -lat * 0.03;
-      T[CI.shLx] += s * 0.7 * A * fk;
+      const A = 0.35 + 0.65 * k, dirF = Math.sign(fwd) || 1;
+      // legs: longer stride, a real knee lift on the recovering leg
+      T[CI.thRx] += (-s * 1.05 * A * fk) * dirF - 0.12 * A * fk; T[CI.thLx] += (s * 1.05 * A * fk) * dirF - 0.12 * A * fk;
+      T[CI.knR] += Math.max(0, c) * 1.35 * A * fk + 0.25 * lk; T[CI.knL] += Math.max(0, -c) * 1.35 * A * fk + 0.25 * lk;
+      // side shuffle: legs open and close, with a little hop
+      T[CI.thRz] += -Math.max(0, s) * 0.5 * A * lk; T[CI.thLz] += Math.max(0, -s) * 0.5 * A * lk;
+      // springy bounce twice per stride, lower when shuffling
+      T[CI.hipY] += -Math.abs(c) * 0.075 * A - 0.05 * lk;
+      // forward lean with speed, hips and shoulders counter-twist
+      T[CI.torRx] += Math.max(0, fwd) * 0.05 - Math.max(0, -fwd) * 0.02; T[CI.torRz] += -lat * 0.03;
+      T[CI.torRy] += s * 0.22 * A * fk; T[CI.rootRy] += -s * 0.1 * A * fk;
+      T[CI.headRy] += -s * 0.12 * A * fk;
+      // both arms pump opposite the legs; the racket arm swings less
+      T[CI.shLx] += s * 0.85 * A * fk; T[CI.elL] += -0.25 * A * fk;
+      T[CI.shRx] += -s * 0.45 * A * fk;
+      // arms out for balance on a shuffle
+      T[CI.shLz] += 0.2 * A * lk;
     } else {
-      // idle sway and split step
-      this.runPh += dt * 3;
-      T[CI.hipY] += Math.sin(this.runPh) * 0.012 - this.split * 0.12;
-      T[CI.knR] += this.split * 0.35; T[CI.knL] += this.split * 0.35;
+      // on the toes between shots: a light rhythmic bounce, weight shifting side to side
+      this.runPh += dt * 7.5;
+      const live = !this.mood;
+      T[CI.hipY] += (live ? -Math.abs(Math.sin(this.runPh)) * 0.03 : Math.sin(this.runPh * 0.4) * 0.01) - this.split * 0.14;
+      T[CI.torRz] += live ? Math.sin(this.runPh * 0.5) * 0.04 : 0;
+      T[CI.knR] += this.split * 0.4 + (live ? Math.abs(Math.sin(this.runPh)) * 0.08 : 0);
+      T[CI.knL] += this.split * 0.4 + (live ? Math.abs(Math.sin(this.runPh)) * 0.08 : 0);
     }
     this.split = Math.max(0, this.split - dt * 4);
     // mood overlays

@@ -60,6 +60,7 @@ const UI = {
     if (!this._cueOn) { el.classList.add('on'); this._cueOn = true; }
     if (good !== this._cueGood) { this._cueGood = good; el.classList.toggle('good', good); document.querySelectorAll('.shot').forEach(b => b.classList.toggle('now', good)); }
   },
+  held(kind) { for (const id of ['b-top', 'b-slice', 'b-lob']) { const b = $(id); if (b) b.classList.toggle('held', !!kind && id === (kind === 'top' ? 'b-top' : kind === 'slice' ? 'b-slice' : 'b-lob')); } },
   pressed(kind) { const b = $(kind === 'top' ? 'b-top' : kind === 'slice' ? 'b-slice' : 'b-lob'); if (!b) return; b.classList.add('down'); setTimeout(() => b.classList.remove('down'), 120); },
   actionLabel(main, sub) { $('b-top-label').textContent = main; $('b-top-sub').textContent = sub; },
 
@@ -175,7 +176,7 @@ const UI = {
     const pages = [
       ['Run and swing', [
         ['MOVE', 'Drag anywhere on the left half to run. The <b>yellow ring</b> on the court is the spot to stand.'],
-        ['TAP', 'A circle closes onto where you will meet the ball. <b>Tap any shot button when it turns gold</b> and says TAP. Early pulls the ball across, late pushes it wide.'],
+        ['TAP', 'When the ball comes to you, tap a shot button. <b>Early is fine</b>: the button lights up and your player swings on time by itself. For a PERFECT shot, tap as the circle turns gold and says TAP. Only a late tap misses.'],
         ['AIM', 'The stick at contact steers the ball: left or right for angle, toward the net for deep, back for short.'],
         ['PERFECT', 'Gold timing plus good footwork gives a PERFECT shot with extra pace and pin-point accuracy.']]],
       ['Your shots', [
@@ -184,7 +185,7 @@ const UI = {
         ['LOB', 'High and deep over a player at the net.'],
         ['COURTS', 'Clay grips: high, slow bounce. Grass skids low and fast. Hard is honest.']]],
       ['Serve and more', [
-        ['SERVE', 'Tap once to toss. A circle closes on the ball: <b>tap again when it turns gold</b> at the top. TOPSPIN is a flat bomb, SLICE swings wide, LOB is a safe kick serve.'],
+        ['SERVE', 'Tap once to toss, then tap again. Early is fine, the swing waits for the top. <b>Tap as the circle turns gold</b> for a perfect serve. TOPSPIN is a flat bomb, SLICE swings wide, LOB is a safe kick serve.'],
         ['PLACE', 'Slide along the baseline before the toss, aim with the stick during it.'],
         ['KEYS', 'WASD or arrows to move. J or Space topspin, K slice, L lob. Esc pauses. Gamepads work too.'],
         ['ABOUT', 'Netcord is made by TNQ Nexus. 3D rendering by three.js (MIT License).']]]
@@ -247,8 +248,8 @@ const UI = {
   onboard(page = 0) {
     const cards = [
       ['Run to the ball', 'Drag anywhere on the left half of the screen to run. A yellow ring on the court shows the best spot to stand.', '<i class="pad"></i><i class="knob"></i>'],
-      ['Tap on the gold', 'A circle closes onto the spot where you meet the ball. Tap any shot button the moment it turns gold and says TAP.', '<i class="apr"></i><i class="tgt"></i><span class="tap">TAP</span>'],
-      ['Toss, then tap at the top', 'To serve, tap once to toss. Tap again when the circle over the ball turns gold, right at the top of the toss.', '<i class="sring"></i><i class="sball"></i>']
+      ['Tap on the gold', 'When the ball comes your way, tap a shot button. Tapped early? Your player waits and swings on time. Tap as the circle turns gold for a PERFECT shot.', '<i class="apr"></i><i class="tgt"></i><span class="tap">TAP</span>'],
+      ['Toss, then tap at the top', 'To serve, tap once to toss, then tap again. Early is fine, the swing waits for the top. Gold means perfect.', '<i class="sring"></i><i class="sball"></i>']
     ];
     const n = cards.length, C = cards[page], last = page === n - 1;
     let html = UI.head(`Welcome to Netcord · ${page + 1} / ${n}`, page === 0 ? 'Three quick tips' : C[0], false, `<button class="btn ghost slim" id="ob-skip">Skip</button>`);

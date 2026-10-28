@@ -137,9 +137,9 @@ class Match {
   constructor(game, cfg) {
     this.game = game; this.cfg = cfg; this.scene = game.scene;
     this.surf = COURTS[cfg.court];
-    const youLook = { shirt: 0xf6f3ea, shorts: 0x173a2a, skin: 0xe8b98e, hair: 0x3a2416, cap: 0xf6f3ea, trim: 0xc8582f, racket: 0x1d5f8a };
+    const youLook = { shirt: 0xf6f3ea, shorts: 0x173a2a, skin: 0xe8b98e, hair: 0x3a2416, cap: 0xf6f3ea, hairStyle: 'short', trim: 0xc8582f, racket: 0x1d5f8a };
     const r = cfg.rival;
-    const rivalLook = { shirt: r.shirt, shorts: r.shorts, skin: r.skin, hair: r.hair, cap: r.cap, lefty: r.lefty, racket: 0xc8382e, trim: r.shorts };
+    const rivalLook = { shirt: r.shirt, shorts: r.shorts, skin: r.skin, hair: r.hair, cap: r.cap, band: r.band, hairStyle: r.hairStyle, lefty: r.lefty, racket: 0xc8382e, trim: r.shorts === r.shirt ? 0xf4efe4 : r.shorts };
     const youProfile = cfg.demo ? Object.assign({}, RIVALS[2], { name: 'Ivy Rowe', short: 'IVY' }) : { name: 'You', short: 'YOU', speed: 6.2 };
     this.P = [makeComp(0, youProfile, youLook, !!cfg.demo), makeComp(1, r, rivalLook, true)];
     for (const c of this.P) { this.scene.add(c.char.root); c.char.onStep = () => this.onStep(c); }
@@ -195,7 +195,7 @@ class Match {
     if (instant) { for (const c of [s, r]) { c.char.pos.set(c.target.x, 0, c.target.z); c.char.vel.set(0, 0, 0); c.char.yaw = c.side > 0 ? Math.PI : 0; } }
     this.state = 'reposition'; this.stateT = 0;
     this.hitter = -1; this.bounces = 0; this.isServe = true; this.letCord = false;
-    for (const c of this.P) { c.swing = null; c.plan = null; c.recover = null; c.char.act = null; c.rushing = false; c.path = null; }
+    for (const c of this.P) { c.swing = null; c.queued = null; c.plan = null; c.recover = null; c.char.act = null; c.rushing = false; c.path = null; }
     this.toss = null; this.rally = 0; UI.rally(0);
   }
 
@@ -258,6 +258,7 @@ class Match {
           const te = (ball.v.y + GRAV * TAP_LAG * this.simScale() - GRAV * STROKES.serve.contact) / GRAV;
           const good = Math.abs(te) <= Math.max(W.p * 1.2 * sw, W.w * 0.5 * sw);
           UI.tossMeter(clamp(1 - te / 0.5, 0, 1), good);
+          if (this.toss.queued && !this.toss.hit && te <= 0) { const k = this.toss.queued; this.toss.queued = null; this.toss.hit = true; UI.held(null); this.serveSwing(sv, k, 0.8); }
           if (!this.toss.hit && te > -W.w * sw) UI.cue({ x: ball.p.x, y: this.toss.apex, z: ball.p.z }, Math.max(0, te) / 0.5, good); else UI.cue(null);
         } else if (ball.v.y <= GRAV * STROKES.serve.contact + 0.1 && !this.toss.hit) {
           this.toss.hit = true; this.serveSwing(sv, 'top', 1 - rand(0, 0.25) * (1 - sv.profile.accuracy));
@@ -458,6 +459,8 @@ class Match {
       let q = clamp(1 - Math.pow(te / (W.w * 2.2 * sw), 1.3), 0, 1);
       if (te <= W.p * 1.2 * sw) q = 1;
       if (this.ball.p.y < 1.95) q = Math.min(q, 0.25);
+      // Assist and Auto-run: tapping too early on the way up holds the swing until the top
+      if (SAVE.settings.assist !== 'off' && vy > 0 && q < 0.75) { if (!this.toss.queued) { UI.held(kind); Haptics.tap(0.25); } this.toss.queued = kind; return; }
       this.toss.hit = true;
       const label = q >= 1 || q > 0.6 ? null : vy > 0 ? 'EARLY' : 'LATE';
       if (label) UI.toast(label, q > 0.6 ? '#9be36b' : '#ff9a5a', H.char.pos, 2.6);
@@ -471,7 +474,7 @@ class Match {
   simScale() { return this.cfg.demo ? SPEEDS.normal : (SPEEDS[SAVE.settings.speed] || 0.8); }
   timing() {
     const a = SAVE.settings.assist;
-    return a === 'off' ? { w: 0.11, p: 0.032 } : a === 'auto' ? { w: 0.165, p: 0.05 } : { w: 0.14, p: 0.04 };
+    return a === 'off' ? { w: 0.11, p: 0.032 } : a === 'auto' ? { w: 0.19, p: 0.055 } : { w: 0.17, p: 0.048 };
   }
 
   /* Timing is judged against one moment: the ball crossing the player's
@@ -538,10 +541,13 @@ class Match {
      (minus the forgiven input lag). How far that is from the ball reaching
      the contact plane sets the quality; early contact pulls the ball
      across the body, late contact pushes it and kills its depth. */
-  humanSwing(c, kind) {
+  humanSwing(c, kind, fromQueue = false) {
     if (c.swing && this.time < c.swing.endT) return;          // still mid-swing or recovering
     const incoming = this.hitter === 1 - c.i && this.bounces < 2;
     if (!incoming) return;                                    // our own ball is on its way out
+    // Assist and Auto-run: an early tap is never wasted. It is held and the
+    // swing fires by itself at the right moment (good, not perfect).
+    const hold = SAVE.settings.assist !== 'off' && !fromQueue;
     if (!c.path) this.tracePath(c);
     const W = this.timing(), ch = c.char;
     const tC = Math.max(this.time + 0.02, this.time - TAP_LAG * this.simScale() + SWING_T);
@@ -551,21 +557,40 @@ class Match {
       c.swing = { kind, stroke: 'whiff', whiff: true, struck: true, endT: this.time + cool };
       UI.toast(label, '#ff9a5a', ch.pos, 2.4); SFX.whoosh();
     };
-    if (!X) return whiff('MOVE IN', 0.3);
+    if (!X) return hold ? this.queueSwing(c, kind, 9) : whiff('MOVE IN', 0.3);
     const e = X.t - tC;                                       // + = swung early
-    if (e > W.w) return whiff('TOO EARLY', 0.26);
+    if (e > W.w) return hold ? this.queueSwing(c, kind, e) : whiff('TOO EARLY', 0.26);
     if (e < -W.w) return whiff('TOO LATE', 0.4);
     const S = this.sampleAt(c, tC);
     const bad = this.contactOk(c, S);
+    if (bad && hold && e > 0.02 && (bad === 'bounce' || bad === 'reach' || bad === 'far')) return this.queueSwing(c, kind, e);
     if (bad) return whiff({ gone: 'TOO LATE', bounce: 'LET IT BOUNCE', far: 'TOO EARLY', high: 'TOO HIGH', low: 'TOO LOW', reach: 'OUT OF REACH' }[bad], 0.3);
     const pre = S.b === 0 && this.bounces === 0;
     const stroke = this.strokeFor(c, S, pre);
     ch.strike(stroke, S.y, STROKES[stroke].contact / Math.max(0.02, tC - this.time), S);
+    if (c.queued) { c.queued = null; UI.held(null); }
     c.swing = { kind, stroke, tC, e, struck: false, endT: tC + 0.3 };
+    if (fromQueue && c.queuedEarly > W.w * 1.6) c.swing.e = Math.max(e, W.p * 1.35);   // held taps land as GOOD
+  }
+  queueSwing(c, kind, early) {
+    if (!c.queued) { UI.pressed(kind); UI.held(kind); Haptics.tap(0.25); }
+    c.queued = { kind, t: this.time, early };
+  }
+  /* fire a held tap at the ideal moment (each physics step) */
+  runQueue(c) {
+    const q = c.queued; if (!q) return;
+    if (this.state !== 'live' || this.hitter !== 1 - c.i || this.bounces >= 2 || this.time - q.t > 3) { c.queued = null; UI.held(null); return; }
+    if (c.swing && this.time < c.swing.endT) return;
+    if (!c.path) this.tracePath(c);
+    const X = this.crossing(c); if (!X) return;
+    if (X.t - SWING_T + TAP_LAG * this.simScale() - this.time > 0) return;
+    c.queued = null; UI.held(null); c.queuedEarly = q.early;
+    this.humanSwing(c, q.kind, true);
   }
 
   /* Called every physics substep for the human. */
   humanContactStep(c) {
+    if (c.queued) this.runQueue(c);
     const sw = c.swing; if (!sw || sw.struck || this.time < sw.tC - 1e-6) return;
     sw.struck = true;
     const b = this.ball, ch = c.char;

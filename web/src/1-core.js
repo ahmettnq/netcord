@@ -52,22 +52,22 @@ const COURTS = {
 const RIVALS = [
   { id: 'pip', name: 'Pip Harlow', short: 'PIP', style: 'Club regular · loves a lob', court: 'clay',
     speed: 4.6, reaction: 0.30, accuracy: 0.45, power: 0.35, aggression: 0.25, net: 0.05, lob: 0.35, drop: 0.05, serve: 0.35, judge: 0.4,
-    shirt: 0xe7a33e, shorts: 0x2d3a4a, skin: 0xf1c7a1, hair: 0x6b3d21, cap: 0xe7a33e, lefty: false },
+    shirt: 0xe7a33e, shorts: 0x2d3a4a, skin: 0xf1c7a1, hair: 0x6b3d21, cap: 0xe7a33e, hairStyle: 'short', lefty: false },
   { id: 'marisol', name: 'Marisol Vance', short: 'MARISOL', style: 'Counterpuncher · gets everything back', court: 'clay',
     speed: 5.4, reaction: 0.20, accuracy: 0.62, power: 0.45, aggression: 0.35, net: 0.05, lob: 0.25, drop: 0.08, serve: 0.45, judge: 0.65,
-    shirt: 0x8a4fb0, shorts: 0xf4efe4, skin: 0xc98b5e, hair: 0x231711, cap: 0xf4efe4, lefty: true },
+    shirt: 0x8a4fb0, shorts: 0xf4efe4, skin: 0xc98b5e, hair: 0x231711, cap: 0xf4efe4, hairStyle: 'pony', lefty: true },
   { id: 'teodor', name: 'Teodor Lund', short: 'TEODOR', style: 'Big server · short points', court: 'grass',
     speed: 5.0, reaction: 0.17, accuracy: 0.62, power: 0.78, aggression: 0.6, net: 0.2, lob: 0.05, drop: 0.04, serve: 0.92, judge: 0.7,
-    shirt: 0xf4efe4, shorts: 0xf4efe4, skin: 0xf3cfb0, hair: 0xd9b25a, cap: 0x1d4f8c, lefty: false },
+    shirt: 0xf4efe4, shorts: 0xf4efe4, skin: 0xf3cfb0, hair: 0xd9b25a, cap: 0x1d4f8c, hairStyle: 'short', lefty: false },
   { id: 'juno', name: 'Juno Akande', short: 'JUNO', style: 'Serve and volley · rushes the net', court: 'grass',
     speed: 5.6, reaction: 0.15, accuracy: 0.68, power: 0.62, aggression: 0.65, net: 0.75, lob: 0.06, drop: 0.12, serve: 0.72, judge: 0.75,
-    shirt: 0x2f8f6a, shorts: 0x173a2a, skin: 0x7a4a2c, hair: 0x15100c, cap: null, lefty: false },
+    shirt: 0x2f8f6a, shorts: 0x173a2a, skin: 0x7a4a2c, hair: 0x15100c, cap: null, band: 0xf4efe4, hairStyle: 'curls', lefty: false },
   { id: 'rafe', name: 'Rafe Okoro', short: 'RAFE', style: 'Baseline grinder · heavy topspin', court: 'hard',
     speed: 5.8, reaction: 0.12, accuracy: 0.76, power: 0.72, aggression: 0.55, net: 0.12, lob: 0.12, drop: 0.08, serve: 0.7, judge: 0.85,
-    shirt: 0xd4483a, shorts: 0x1c1c22, skin: 0x5e3a24, hair: 0x0e0b09, cap: 0x1c1c22, lefty: true },
+    shirt: 0xd4483a, shorts: 0x1c1c22, skin: 0x5e3a24, hair: 0x0e0b09, cap: 0x1c1c22, hairStyle: 'buzz', lefty: true },
   { id: 'saskia', name: 'Saskia Moreau', short: 'SASKIA', style: 'Club champion · no weaknesses', court: 'hard',
     speed: 6.2, reaction: 0.08, accuracy: 0.86, power: 0.84, aggression: 0.7, net: 0.35, lob: 0.12, drop: 0.14, serve: 0.86, judge: 0.95,
-    shirt: 0x15263f, shorts: 0x15263f, skin: 0xe9b995, hair: 0x3a1f12, cap: 0xf4efe4, lefty: false }
+    shirt: 0x15263f, shorts: 0x15263f, skin: 0xe9b995, hair: 0x3a1f12, cap: null, band: 0xf4efe4, hairStyle: 'bun', lefty: false }
 ];
 
 /* Quick-match difficulty overlays applied to a rival's personality. */
@@ -83,7 +83,7 @@ const FORMATS = {
   match:   { label: 'Best of 3', sub: 'Sets to 4 games', games: 4, sets: 3 }
 };
 
-const SPEEDS = { relaxed: 0.66, normal: 0.8, pro: 0.95 };
+const SPEEDS = { relaxed: 0.74, normal: 0.9, pro: 1.0 };
 
 /* ---------------- Save data ---------------- */
 const SAVE_KEY = 'netcord.save.v1';
@@ -92,11 +92,11 @@ const SAVE_KEY = 'netcord.save.v1';
    survives even if the web view's storage is cleared. */
 const NATIVE = window.webkit && window.webkit.messageHandlers ? window.webkit.messageHandlers : null;
 const DEFAULT_SAVE = {
-  settings: { speed: 'normal', assist: 'assist', pixel: 0, quality: 'auto', cam: 'diorama', sfx: true, voice: true, guides: true, haptics: true, tod: 'day' },
+  settings: { speed: 'normal', assist: 'auto', pixel: 0, quality: 'auto', cam: 'diorama', sfx: true, voice: true, guides: true, haptics: true, tod: 'day' },
   career: { rung: 0 },
   quick: { court: 'clay', rival: 'marisol', difficulty: 'normal', format: 'short', tod: 'day' },
   stats: { played: 0, won: 0, aces: 0, longest: 0, fastest: 0 },
-  flags: { intro: false, tut: false }
+  flags: { intro: false, tut: false, v2: false }
 };
 function loadSave() {
   let s = null;
@@ -107,6 +107,8 @@ function loadSave() {
   return out;
 }
 const SAVE = loadSave();
+// build 3: Auto-run becomes the default for everyone once (it can still be changed in Settings)
+if (!SAVE.flags.v2) { SAVE.flags.v2 = true; if (SAVE.settings.assist === 'assist') SAVE.settings.assist = 'auto'; }
 function persist() {
   const j = JSON.stringify(SAVE);
   try { localStorage.setItem(SAVE_KEY, j); } catch (e) { /* storage blocked */ }
