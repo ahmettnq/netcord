@@ -199,7 +199,7 @@ class Character {
       wr.add(part(S, L.skin, 0, -0.035, 0, 0.05, 0.055, 0.045));
       return [sh, el, wr];
     };
-    [this.shR, this.elR, this.wrR] = arm(-1); [this.shL, this.elL] = arm(1);
+    [this.shR, this.elR, this.wrR] = arm(-1); [this.shL, this.elL, this.wrL] = arm(1);
     // racket: grip, throat and an oval frame with strings (frame in the y-z plane)
     const r = this.racket = new THREE.Group(); r.position.y = -0.06; this.wrR.add(r);
     const rc = L.racket || 0xc8382e;
@@ -464,6 +464,13 @@ class Character {
     this.applyPose();
     this.root.position.set(this.pos.x + vo.x, vo.y, this.pos.z + vo.z);
     if (this.blob) { const r = this.root.scale.x; this.blob.position.y = (0.03 - vo.y) / r; const bs = 1 / (1 + vo.y * 1.5); this.blob.scale.set(bs, 1, bs * 0.85); }
+  }
+  /* where the free (tossing) hand's palm is, relative to the character's feet, from the last drawn pose */
+  palmOffset(out) {
+    this.root.updateMatrixWorld(true);
+    const w = this._pw || (this._pw = new THREE.Vector3());
+    this.wrL.localToWorld(out.set(0, -0.075, 0.02)); this.root.getWorldPosition(w);
+    return out.sub(w);
   }
   racketHead(out) { this.racket.children[2].getWorldPosition(out); return out; }
 }

@@ -6262,7 +6262,7 @@ class Character {
       wr.add(part(S, L.skin, 0, -0.035, 0, 0.05, 0.055, 0.045));
       return [sh, el, wr];
     };
-    [this.shR, this.elR, this.wrR] = arm(-1); [this.shL, this.elL] = arm(1);
+    [this.shR, this.elR, this.wrR] = arm(-1); [this.shL, this.elL, this.wrL] = arm(1);
     // racket: grip, throat and an oval frame with strings (frame in the y-z plane)
     const r = this.racket = new THREE.Group(); r.position.y = -0.06; this.wrR.add(r);
     const rc = L.racket || 0xc8382e;
@@ -6528,6 +6528,13 @@ class Character {
     this.root.position.set(this.pos.x + vo.x, vo.y, this.pos.z + vo.z);
     if (this.blob) { const r = this.root.scale.x; this.blob.position.y = (0.03 - vo.y) / r; const bs = 1 / (1 + vo.y * 1.5); this.blob.scale.set(bs, 1, bs * 0.85); }
   }
+  /* where the free (tossing) hand's palm is, relative to the character's feet, from the last drawn pose */
+  palmOffset(out) {
+    this.root.updateMatrixWorld(true);
+    const w = this._pw || (this._pw = new THREE.Vector3());
+    this.wrL.localToWorld(out.set(0, -0.075, 0.02)); this.root.getWorldPosition(w);
+    return out.sub(w);
+  }
   racketHead(out) { this.racket.children[2].getWorldPosition(out); return out; }
 }
 
@@ -6783,6 +6790,7 @@ class Match {
         this.P[1 - this.server].char.drive(0, 0, dt);
         // ball under gravity only
         ball.v.y -= GRAV * dt; ball.p.y += ball.v.y * dt;
+        { const k = Math.pow(Math.max(0, 1 - this.stateT / 0.28), 2), T = this.toss; if (T.tx != null) { ball.p.x = T.tx + T.hx * k; ball.p.z = T.tz + T.hz * k; } }
         if (!sv.isAI) {
           this.showServeAim(sv, stick);
           // seconds until the ideal tap (the strings arrive as the toss peaks)
@@ -6878,9 +6886,10 @@ class Match {
     const sv = this.P[this.server], ch = sv.char;
     const r = ch.facingRight();
     const fwd = { x: Math.sin(ch.yaw), z: Math.cos(ch.yaw) };
-    const hs = ch.lefty ? -1 : 1; // tossing hand is the non-racket hand (left for righties)
-    this.ball.p.x = ch.pos.x - r.x * 0.3 * hs + fwd.x * 0.3; this.ball.p.z = ch.pos.z - r.z * 0.3 * hs + fwd.z * 0.3;
-    this.ball.p.y = 1.0; this.ball.v.x = this.ball.v.y = this.ball.v.z = 0; this.ball.w.x = this.ball.w.y = this.ball.w.z = 0;
+    // the ball sits in the free hand's palm (the non-racket hand, left for righties)
+    const o = ch.palmOffset(this._po || (this._po = new THREE.Vector3()));
+    if (o.lengthSq() > 0.01 && o.y > 0.3 && o.y < 2.4) { this.ball.p.x = ch.pos.x + o.x; this.ball.p.z = ch.pos.z + o.z; this.ball.p.y = o.y; }
+    else { const hs = ch.lefty ? -1 : 1; this.ball.p.x = ch.pos.x - r.x * 0.3 * hs + fwd.x * 0.3; this.ball.p.z = ch.pos.z - r.z * 0.3 * hs + fwd.z * 0.3; this.ball.p.y = 1.0; } this.ball.v.x = this.ball.v.y = this.ball.v.z = 0; this.ball.w.x = this.ball.w.y = this.ball.w.z = 0;
     this.ball.rolling = false; this.ball.netHit = false;
   }
 
@@ -6892,11 +6901,15 @@ class Match {
     const pose = ch._sp || (ch._sp = new Float32Array(NCH));
     const H = ch.probeHead(ch.contactPose('serve', 2.6, null, pose), ch.pos.x, 0, ch.pos.z, ch.yaw, new THREE.Vector3());
     const ok = H.y > 2.0 && H.y < 3.8 && Math.hypot(H.x - ch.pos.x, H.z - ch.pos.z) < 1.2;
+    const hand = { x: this.ball.p.x, z: this.ball.p.z };   // where the ball sat in the palm
     if (ok) { this.ball.p.x = H.x; this.ball.p.z = H.z; }
     else { this.ball.p.x = ch.pos.x + fwd.x * 0.42 - r.x * 0.12 * hs; this.ball.p.z = ch.pos.z + fwd.z * 0.42 - r.z * 0.12 * hs; }
     const apex = ok ? H.y : 2.82;
     this.ball.p.y = 1.55; this.ball.v.y = Math.sqrt(2 * GRAV * Math.max(0.6, apex - 1.55)); this.ball.v.x = 0; this.ball.v.z = 0;
-    this.toss = { apex: 1.55 + this.ball.v.y * this.ball.v.y / (2 * GRAV), hit: false, pending: null };
+    this.toss = { apex: 1.55 + this.ball.v.y * this.ball.v.y / (2 * GRAV), hit: false, pending: null,
+      tx: this.ball.p.x, tz: this.ball.p.z, hx: hand.x - this.ball.p.x, hz: hand.z - this.ball.p.z };
+    if (Math.hypot(this.toss.hx, this.toss.hz) > 0.8) this.toss.hx = this.toss.hz = 0;
+    this.ball.p.x += this.toss.hx; this.ball.p.z += this.toss.hz;   // leaves from the hand, drifts onto the toss line
     ch.prep('serve');
     this.state = 'toss'; this.stateT = 0;
     UI.hint('');
