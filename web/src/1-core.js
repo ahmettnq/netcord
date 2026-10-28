@@ -153,6 +153,17 @@ class Audio {
     }
     if (this.ctx.state === 'suspended') this.ctx.resume();
     if (typeof Umpire !== 'undefined') Umpire.load();
+    this.loadHit();
+  }
+  /* the recorded racket strike (HIT_CLIP in 8-voice.js); the synth below stays as the fallback and adds weight */
+  loadHit() {
+    if (this.hitBuf || this._hitLoading || !this.ctx || typeof HIT_CLIP === 'undefined') return;
+    this._hitLoading = true;
+    try {
+      const bin = atob(HIT_CLIP), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+      const ok = b => { this.hitBuf = b; }, bad = () => { this._hitLoading = false; };
+      const p = this.ctx.decodeAudioData(u8.buffer, ok, bad); if (p && p.catch) p.catch(bad);
+    } catch (e) { this._hitLoading = false; }
   }
   get ok() { return this.ctx && this.enabled; }
   noise(dur, freq, q, gain, type = 'bandpass', when = 0) {
@@ -174,10 +185,19 @@ class Audio {
   hit(power = 0.6, perfect = false, kind = 'top') {
     if (!this.ok) return;
     const p = clamp(power, 0.2, 1.2);
-    // string "pock": a short bright noise burst plus a hollow body tone
-    this.noise(0.05 + p * 0.02, kind === 'slice' ? 1300 : 1900, 1.4, 0.55 * p + 0.15);
-    this.tone(kind === 'slice' ? 330 : 420, 0.07, 0.35 * p + 0.1, 'triangle', 0.55);
-    this.tone(160, 0.09, 0.25 * p, 'sine', 0.6);
+    if (this.hitBuf) {
+      // the recorded strike: harder shots are louder and a touch lower, slices a touch brighter, each one varied slightly
+      const c = this.ctx, s = c.createBufferSource(), g = c.createGain();
+      s.buffer = this.hitBuf;
+      s.playbackRate.value = clamp((kind === 'slice' ? 1.07 : kind === 'lob' ? 1.02 : 0.98) - (p - 0.6) * 0.1 + rand(-0.04, 0.04), 0.85, 1.2);
+      g.gain.value = clamp(0.42 + p * 0.7, 0.4, 1.15);
+      s.connect(g); g.connect(this.master); s.start();
+    } else {
+      // string "pock": a short bright noise burst plus a hollow body tone
+      this.noise(0.05 + p * 0.02, kind === 'slice' ? 1300 : 1900, 1.4, 0.55 * p + 0.15);
+      this.tone(kind === 'slice' ? 330 : 420, 0.07, 0.35 * p + 0.1, 'triangle', 0.55);
+      this.tone(160, 0.09, 0.25 * p, 'sine', 0.6);
+    }
     // weight: a low thump that grows with pace, so big hits feel big
     this.tone(70 + p * 25, 0.12, 0.18 * p, 'sine', 0.5);
     if (perfect) { this.noise(0.12, 3200, 3, 0.18); this.tone(880, 0.12, 0.08, 'sine', 1.02, 0.01); this.noise(0.05, 6000, 0.8, 0.12, 'highpass'); }
