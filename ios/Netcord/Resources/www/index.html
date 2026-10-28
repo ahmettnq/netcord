@@ -4786,7 +4786,7 @@ class Audio {
       s.buffer = this.hitBuf;
       s.playbackRate.value = clamp((kind === 'slice' ? 1.07 : kind === 'lob' ? 1.02 : 0.98) - (p - 0.6) * 0.1 + rand(-0.04, 0.04), 0.85, 1.2);
       g.gain.value = clamp(0.42 + p * 0.7, 0.4, 1.15);
-      s.connect(g); g.connect(this.master); s.start();
+      s.connect(g); g.connect(this.master); s.start(c.currentTime);
     } else {
       // string "pock": a short bright noise burst plus a hollow body tone
       this.noise(0.05 + p * 0.02, kind === 'slice' ? 1300 : 1900, 1.4, 0.55 * p + 0.15);
