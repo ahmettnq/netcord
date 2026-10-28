@@ -4874,21 +4874,21 @@ const Umpire = {
     const seq = []; let gap = 0;
     for (let i = 0; i < toks.length; i++) {
       const t = toks[i];
-      if (/^[,;:]+$/.test(t)) { gap = Math.max(gap, 0.17); continue; }
-      if (/^[.!?]+$/.test(t)) { gap = Math.max(gap, 0.34); continue; }
+      if (/^[,;:]+$/.test(t)) { gap = Math.max(gap, 0.4); continue; }
+      if (/^[.!?]+$/.test(t)) { gap = Math.max(gap, 0.62); continue; }
       let w = t, two = toks[i + 1] ? t + ' ' + toks[i + 1] : null;
       if (two && this.buf[two]) { w = two; i++; }
       if (!this.buf[w]) return false;
-      seq.push([w, gap]); gap = 0.04;
+      seq.push([w, gap]); gap = 0.16;
     }
     if (!seq.length) return false;
     for (const s of this.live) { try { s.stop(); } catch (e) { /* already ended */ } }
     this.live = [];
-    const c = SFX.ctx; let t = c.currentTime + 0.03;
+    const c = SFX.ctx; let t = c.currentTime + 0.4;
     const g = c.createGain(); g.gain.value = 1.15; g.connect(SFX.master);
     for (const [w, gp] of seq) {
       const b = this.buf[w], s = c.createBufferSource(); s.buffer = b; s.connect(g);
-      t += gp; s.start(t); this.live.push(s); t += Math.max(0.1, b.duration - 0.05);
+      t += gp; s.start(t); this.live.push(s); t += Math.max(0.12, b.duration - 0.01);
     }
     this.last = seq.map(x => x[0]).join(' ');
     return true;
@@ -6020,11 +6020,15 @@ function buildClub(scene, courtId) {
       const cam = window.GAME && GAME.camera; if (!cam) return;
       const v = this._cv || (this._cv = new THREE.Vector3()), cv = this._cc || (this._cc = new THREE.Vector3());
       let x0 = 9, x1 = -9, y0 = 9, y1 = -9;
-      for (const [px, pz] of [[-7, -14], [7, -14], [7, 14], [-7, 14]]) { v.set(px, 0, pz).project(cam); x0 = Math.min(x0, v.x); x1 = Math.max(x1, v.x); y0 = Math.min(y0, v.y); y1 = Math.max(y1, v.y); }
-      const zCourt = v.set(0, 0, 0).project(cam).z, halfW = (cam.right - cam.left) / (2 * (cam.zoom || 1));
+      // screen box of the whole island top (court plus surround) and the depth of its farthest corner:
+      // a cloud nearer than that corner can paint over the island, so it must clear the box
+      let zFar = -9;
+      for (const [px, pz] of [[-11, -19], [11, -19], [11, 19], [-11, 19]]) { v.set(px, 0, pz).project(cam); x0 = Math.min(x0, v.x); x1 = Math.max(x1, v.x); y0 = Math.min(y0, v.y); y1 = Math.max(y1, v.y); zFar = Math.max(zFar, v.z); }
+      y0 -= 0.12; // the cliff face hangs below the top edge on screen
+      const zCourt = zFar, halfW = (cam.right - cam.left) / (2 * (cam.zoom || 1));
       for (const c of clouds) {
         c.getWorldPosition(cv); v.copy(cv).project(cam); const near = v.z < zCourt;
-        const rx = (c.scale.x * 0.42) / halfW, ry = (c.scale.y * 0.42) / ((cam.top - cam.bottom) / (2 * (cam.zoom || 1)));
+        const rx = (c.scale.x * 0.5) / halfW, ry = (c.scale.y * 0.5) / ((cam.top - cam.bottom) / (2 * (cam.zoom || 1)));
         const over = near && v.x + rx > x0 && v.x - rx < x1 && v.y + ry > y0 && v.y - ry < y1;
         const want = over ? 0 : 0.82;
         c.material.opacity += (want - c.material.opacity) * Math.min(1, dt * 3);

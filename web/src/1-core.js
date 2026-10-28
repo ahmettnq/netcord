@@ -279,21 +279,21 @@ const Umpire = {
     const seq = []; let gap = 0;
     for (let i = 0; i < toks.length; i++) {
       const t = toks[i];
-      if (/^[,;:]+$/.test(t)) { gap = Math.max(gap, 0.17); continue; }
-      if (/^[.!?]+$/.test(t)) { gap = Math.max(gap, 0.34); continue; }
+      if (/^[,;:]+$/.test(t)) { gap = Math.max(gap, 0.4); continue; }
+      if (/^[.!?]+$/.test(t)) { gap = Math.max(gap, 0.62); continue; }
       let w = t, two = toks[i + 1] ? t + ' ' + toks[i + 1] : null;
       if (two && this.buf[two]) { w = two; i++; }
       if (!this.buf[w]) return false;
-      seq.push([w, gap]); gap = 0.04;
+      seq.push([w, gap]); gap = 0.16;
     }
     if (!seq.length) return false;
     for (const s of this.live) { try { s.stop(); } catch (e) { /* already ended */ } }
     this.live = [];
-    const c = SFX.ctx; let t = c.currentTime + 0.03;
+    const c = SFX.ctx; let t = c.currentTime + 0.4;
     const g = c.createGain(); g.gain.value = 1.15; g.connect(SFX.master);
     for (const [w, gp] of seq) {
       const b = this.buf[w], s = c.createBufferSource(); s.buffer = b; s.connect(g);
-      t += gp; s.start(t); this.live.push(s); t += Math.max(0.1, b.duration - 0.05);
+      t += gp; s.start(t); this.live.push(s); t += Math.max(0.12, b.duration - 0.01);
     }
     this.last = seq.map(x => x[0]).join(' ');
     return true;
