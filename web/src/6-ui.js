@@ -49,18 +49,36 @@ const UI = {
     arc.setAttribute('stroke-dasharray', `${f * len} ${len}`);
     arc.setAttribute('stroke', good ? '#f2c14e' : '#173a2a');
   },
+  /* the tap cue: an approach circle that closes onto a fixed ring where the
+     ball will be met, turning gold (and pulsing the shot buttons) on the beat */
+  cue(pos, k, good) {
+    const el = $('cue');
+    if (!pos || (GAME.match && GAME.match.cfg.demo)) { if (this._cueOn) { el.classList.remove('on', 'good'); this._cueOn = false; this._cueGood = false; document.querySelectorAll('.shot.now').forEach(b => b.classList.remove('now')); } return; }
+    const v = GAME.project(pos.x, pos.y, pos.z);
+    el.style.transform = `translate(${v.x}px,${v.y}px)`;
+    el.style.setProperty('--s', (1 + 1.6 * clamp(k, 0, 1)).toFixed(3));
+    if (!this._cueOn) { el.classList.add('on'); this._cueOn = true; }
+    if (good !== this._cueGood) { this._cueGood = good; el.classList.toggle('good', good); document.querySelectorAll('.shot').forEach(b => b.classList.toggle('now', good)); }
+  },
   pressed(kind) { const b = $(kind === 'top' ? 'b-top' : kind === 'slice' ? 'b-slice' : 'b-lob'); if (!b) return; b.classList.add('down'); setTimeout(() => b.classList.remove('down'), 120); },
   actionLabel(main, sub) { $('b-top-label').textContent = main; $('b-top-sub').textContent = sub; },
 
-  /* ---------- sheets ---------- */
-  open(html, onMount) {
-    $('sheet-card').innerHTML = html; $('sheet').classList.remove('hidden');
-    $('sheet-card').scrollTop = 0;
-    const x = $('sheet-card').querySelector('[data-close]'); if (x) x.onclick = () => { SFX.click(); UI.close(); };
-    if (onMount) onMount($('sheet-card'));
+  /* ---------- sheets ----------
+     Every sheet is laid out for a phone held sideways (about 844x390 points,
+     as small as 667x375): two columns, the main action in the header, and
+     nothing that needs scrolling. */
+  open(html, onMount, cls = '') {
+    const card = $('sheet-card');
+    card.className = 'card panel ' + cls;
+    card.innerHTML = html; $('sheet').classList.remove('hidden');
+    card.scrollTop = 0;
+    card.querySelectorAll('[data-close]').forEach(x => x.onclick = () => { SFX.click(); UI.close(); });
+    if (onMount) onMount(card);
   },
   close() { $('sheet').classList.add('hidden'); if (UI.onClose) { const f = UI.onClose; UI.onClose = null; f(); } },
-  head(eyebrow, title, close = true) { return `<div class="sheet-head"><div><div class="eyebrow">${eyebrow}</div><div class="h2" style="margin-top:6px">${title}</div></div>${close ? '<button class="x" data-close>✕</button>' : ''}</div>`; },
+  head(eyebrow, title, close = true, action = '') {
+    return `<div class="sheet-head"><div class="ttl"><div class="eyebrow">${eyebrow}</div><div class="h2">${title}</div></div><div class="acts">${action}${close ? '<button class="x" data-close aria-label="Close">✕</button>' : ''}</div></div>`;
+  },
   chips(name, opts, cur) { return `<div class="chips" data-group="${name}">` + opts.map(([v, l]) => `<button class="chip ${String(v) === String(cur) ? 'on' : ''}" data-v="${v}">${l}</button>`).join('') + '</div>'; },
   bindChips(root, name, cb) {
     const g = root.querySelector(`[data-group="${name}"]`); if (!g) return;
@@ -70,10 +88,10 @@ const UI = {
     return '<div class="courts" data-group="court">' + Object.values(COURTS).map(c => `<button class="court-card ${c.id === cur ? 'on' : ''}" data-v="${c.id}"><div class="sw" style="background:${c.swatch}"></div><b>${c.short}</b><i>${c.tag}</i></button>`).join('') + '</div>';
   },
   bindCourts(root, cb) { root.querySelectorAll('.court-card').forEach(b => b.onclick = () => { SFX.click(); root.querySelectorAll('.court-card').forEach(x => x.classList.toggle('on', x === b)); cb(b.dataset.v); }); },
-  rungHtml(r, i, state, sel) {
+  rungHtml(r, i, state, sel, mini) {
     const hex = n => '#' + n.toString(16).padStart(6, '0');
     const st = state === 'done' ? 'BEATEN' : state === 'next' ? 'NEXT UP' : state === 'locked' ? 'LOCKED' : COURTS[r.court].short;
-    return `<button class="rung ${state} ${sel ? 'sel' : ''}" data-i="${i}"><span class="av" style="background:${hex(r.shirt)};--skin:${hex(r.skin)}"></span><span class="nm"><b>${i + 1}. ${r.name}</b><i>${r.style} · ${COURTS[r.court].short}</i></span><span class="st">${st}</span></button>`;
+    return `<button class="rung ${state} ${sel ? 'sel' : ''} ${mini ? 'mini' : ''}" data-i="${i}"><span class="av" style="background:${hex(r.shirt)};--skin:${hex(r.skin)}"></span><span class="nm"><b>${mini ? r.name.split(' ')[0] : (i + 1) + '. ' + r.name}</b><i>${mini ? COURTS[r.court].short : r.style}</i></span>${mini ? '' : `<span class="st">${st}</span>`}</button>`;
   },
 
   showTitle() {
@@ -86,34 +104,34 @@ const UI = {
 
   career() {
     const rung = SAVE.career.rung;
-    let html = UI.head('The Club Ladder', rung >= RIVALS.length ? 'Club champion' : 'Climb the ladder');
-    html += `<p class="lede" style="margin-top:6px">Beat each rival on their home court to unlock the next. Short sets, standard scoring.</p><div class="ladder">`;
-    RIVALS.forEach((r, i) => { html += UI.rungHtml(r, i, i < rung ? 'done' : i === rung ? 'next' : 'locked', false); });
-    html += `</div><div class="row-label">Difficulty</div>` + UI.chips('cdiff', [['easy', 'Easy'], ['normal', 'Normal'], ['hard', 'Hard']], SAVE.quick.difficulty);
     const target = Math.min(rung, RIVALS.length - 1);
-    html += `<div style="margin-top:16px"><button class="btn primary" id="go-career">Play ${RIVALS[target].name.split(' ')[0]} <small>${COURTS[RIVALS[target].court].name.toUpperCase()}</small></button></div>`;
+    const goLabel = i => `Play ${RIVALS[i].name.split(' ')[0]} <small>${COURTS[RIVALS[i].court].short.toUpperCase()}</small>`;
+    let html = UI.head('The Club Ladder', rung >= RIVALS.length ? 'Club champion' : 'Climb the ladder', true, `<button class="btn primary go" id="go-career">${goLabel(target)}</button>`);
+    html += `<div class="ladder two">`;
+    RIVALS.forEach((r, i) => { html += UI.rungHtml(r, i, i < rung ? 'done' : i === rung ? 'next' : 'locked', false); });
+    html += `</div><div class="inline-row"><span class="row-label">Difficulty</span>` + UI.chips('cdiff', [['easy', 'Easy'], ['normal', 'Normal'], ['hard', 'Hard']], SAVE.quick.difficulty) + `<span class="note">Beat each rival on their home court to unlock the next.</span></div>`;
     UI.open(html, root => {
       let pickI = target;
       root.querySelectorAll('.rung').forEach(b => b.onclick = () => {
         const i = +b.dataset.i; if (i > rung) return;
         SFX.click(); pickI = i;
         root.querySelectorAll('.rung').forEach(x => x.classList.toggle('sel', +x.dataset.i === i));
-        $('go-career').innerHTML = `Play ${RIVALS[i].name.split(' ')[0]} <small>${COURTS[RIVALS[i].court].name.toUpperCase()}</small>`;
+        $('go-career').innerHTML = goLabel(i);
       });
       UI.bindChips(root, 'cdiff', v => { SAVE.quick.difficulty = v; persist(); });
       $('go-career').onclick = () => { SFX.click(); UI.close(); GAME.startMatch({ court: RIVALS[pickI].court, rival: RIVALS[pickI], format: 'short', difficulty: SAVE.quick.difficulty, career: pickI, tod: SAVE.settings.tod }); };
-    });
+    }, 'wide');
   },
   quick() {
     const q = SAVE.quick;
-    let html = UI.head('Quick Match', 'Pick your court');
-    html += UI.courtCards(q.court);
-    html += `<div class="row-label">Opponent</div><div class="ladder" id="q-rivals">`;
-    RIVALS.forEach((r, i) => { html += UI.rungHtml(r, i, '', r.id === q.rival); });
-    html += `</div><div class="row-label">Difficulty</div>` + UI.chips('qdiff', [['easy', 'Easy'], ['normal', 'Normal'], ['hard', 'Hard']], q.difficulty);
+    let html = UI.head('Quick Match', 'Pick your court', true, `<button class="btn clay go" id="go-quick">Walk on court <small>START</small></button>`);
+    html += `<div class="cols"><div class="col">${UI.courtCards(q.court)}<div class="row-label">Opponent</div><div class="ladder three" id="q-rivals">`;
+    RIVALS.forEach((r, i) => { html += UI.rungHtml(r, i, '', r.id === q.rival, true); });
+    html += `</div></div><div class="col">`;
+    html += `<div class="row-label">Difficulty</div>` + UI.chips('qdiff', [['easy', 'Easy'], ['normal', 'Normal'], ['hard', 'Hard']], q.difficulty);
     html += `<div class="row-label">Length</div>` + UI.chips('qfmt', Object.entries(FORMATS).map(([k, f]) => [k, f.label]), q.format);
     html += `<div class="row-label">Time of day</div>` + UI.chips('qtod', [['day', 'Afternoon'], ['dusk', 'Golden hour'], ['night', 'Under lights']], q.tod);
-    html += `<div style="margin-top:18px"><button class="btn clay" id="go-quick">Walk on court <small>START</small></button></div>`;
+    html += `</div></div>`;
     UI.open(html, root => {
       UI.bindCourts(root, v => { q.court = v; persist(); GAME.previewCourt(v, q.tod); });
       root.querySelectorAll('#q-rivals .rung').forEach(b => b.onclick = () => { SFX.click(); q.rival = RIVALS[+b.dataset.i].id; persist(); root.querySelectorAll('#q-rivals .rung').forEach(x => x.classList.toggle('sel', x === b)); });
@@ -121,57 +139,75 @@ const UI = {
       UI.bindChips(root, 'qfmt', v => { q.format = v; persist(); });
       UI.bindChips(root, 'qtod', v => { q.tod = v; persist(); GAME.setTOD(v); });
       $('go-quick').onclick = () => { SFX.click(); UI.close(); GAME.startMatch({ court: q.court, rival: RIVALS.find(r => r.id === q.rival), format: q.format, difficulty: q.difficulty, tod: q.tod }); };
-    });
+    }, 'wide');
   },
   settings(fromPause) {
     const s = SAVE.settings;
     let html = UI.head('Settings', 'Club preferences');
-    const row = (title, sub, chips) => `<div class="toggle-row" style="flex-wrap:wrap"><div><b>${title}</b><i>${sub}</i></div>${chips}</div>`;
-    html += row('Game speed', 'How fast the ball travels', UI.chips('speed', [['relaxed', 'Relaxed'], ['normal', 'Normal'], ['pro', 'Pro']], s.speed));
-    html += row('Movement help', 'Steers your run to the sweet spot. Also sets how forgiving swing timing is', UI.chips('assist', [['off', 'Pro'], ['assist', 'Assist'], ['auto', 'Auto-run']], s.assist));
-    html += row('Shot guides', 'Bounce ring, sweet spot, timing ring', UI.chips('guides', [['true', 'On'], ['false', 'Off']], s.guides));
-    html += row('Graphics', 'Auto lowers detail if your phone runs warm', UI.chips('quality', [['auto', 'Auto'], ['high', 'High'], ['low', 'Battery saver']], s.quality));
-    html += row('Retro pixels', 'A chunky old-school filter', UI.chips('pixel', [['0', 'Off'], ['1', 'Fine'], ['2', 'Chunky']], s.pixel));
-    html += row('Haptics', 'Feel every strike in your hand', UI.chips('haptics', [['true', 'On'], ['false', 'Off']], s.haptics));
-    html += row('Camera', 'Diorama corner or behind the baseline', UI.chips('cam', [['diorama', 'Diorama'], ['low', 'Low corner'], ['behind', 'Behind']], s.cam));
-    html += row('Sound', 'Ball, crowd and ambience', UI.chips('sfx', [['true', 'On'], ['false', 'Off']], s.sfx));
-    html += row('Umpire voice', 'Score calls from the chair', UI.chips('voice', [['true', 'On'], ['false', 'Off']], s.voice));
-    html += `<div style="margin-top:16px"><button class="btn ghost" id="set-reset">Reset ladder progress <small>CAN'T UNDO</small></button></div>`;
+    const row = (title, chips) => `<div class="set-row"><b>${title}</b>${chips}</div>`;
+    html += `<div class="set-grid">`;
+    html += row('Game speed', UI.chips('speed', [['relaxed', 'Relaxed'], ['normal', 'Normal'], ['pro', 'Pro']], s.speed));
+    html += row('Movement help', UI.chips('assist', [['off', 'Pro'], ['assist', 'Assist'], ['auto', 'Auto-run']], s.assist));
+    html += row('Shot guides', UI.chips('guides', [['true', 'On'], ['false', 'Off']], s.guides));
+    html += row('Graphics', UI.chips('quality', [['auto', 'Auto'], ['high', 'High'], ['low', 'Saver']], s.quality));
+    html += row('Retro pixels', UI.chips('pixel', [['0', 'Off'], ['1', 'Fine'], ['2', 'Chunky']], s.pixel));
+    html += row('Camera', UI.chips('cam', [['diorama', 'Diorama'], ['low', 'Low'], ['behind', 'Behind']], s.cam));
+    html += row('Haptics', UI.chips('haptics', [['true', 'On'], ['false', 'Off']], s.haptics));
+    html += row('Sound', UI.chips('sfx', [['true', 'On'], ['false', 'Off']], s.sfx));
+    html += row('Umpire voice', UI.chips('voice', [['true', 'On'], ['false', 'Off']], s.voice));
+    html += `<div class="set-row"><button class="btn ghost slim" id="set-tut">Replay tutorial</button><button class="btn ghost slim" id="set-reset">Reset ladder</button></div>`;
+    html += `</div><p class="note">Assist and Auto-run also make swing and serve timing more forgiving. Shot guides show the tap circle and the bounce ring.</p>`;
     UI.open(html, root => {
       const set = (k, conv) => UI.bindChips(root, k, v => { s[k] = conv ? conv(v) : v; persist(); GAME.applySettings(); });
       set('speed'); set('assist'); set('guides', v => v === 'true'); set('quality'); set('pixel', v => +v); set('haptics', v => v === 'true'); set('cam'); set('sfx', v => v === 'true'); set('voice', v => v === 'true');
+      $('set-tut').onclick = () => { SFX.click(); UI.onClose = null; UI.close(); if (GAME.match && !GAME.match.cfg.demo) { GAME.paused = false; GAME.toTitle(); } GAME.startTutorial(); };
       // two taps instead of a system dialog (dialogs don't show inside the iOS app)
       let armed = false;
       $('set-reset').onclick = () => {
         SFX.click();
-        if (!armed) { armed = true; $('set-reset').innerHTML = 'Tap again to reset the ladder <small>SURE?</small>'; setTimeout(() => { armed = false; const b = $('set-reset'); if (b) b.innerHTML = "Reset ladder progress <small>CAN'T UNDO</small>"; }, 3000); return; }
-        SAVE.career.rung = 0; persist(); UI.showTitle(); $('set-reset').innerHTML = 'Ladder reset <small>DONE</small>'; armed = false;
+        if (!armed) { armed = true; $('set-reset').textContent = 'Tap again to reset'; setTimeout(() => { armed = false; const b = $('set-reset'); if (b) b.textContent = 'Reset ladder'; }, 3000); return; }
+        SAVE.career.rung = 0; persist(); UI.showTitle(); $('set-reset').textContent = 'Ladder reset'; armed = false;
       };
-    });
+    }, 'wide');
     if (fromPause) UI.onClose = () => UI.pause();
   },
-  how() {
-    let html = UI.head('How to play', 'Read it, run, swing');
-    html += `<div class="how">
-      <div><kbd>STICK</kbd><span>Drag anywhere on the left half to run. The <b>yellow ring</b> marks the sweet spot: stand there and the ball arrives at the top of its bounce.</span></div>
-      <div><kbd>SWING</kbd><span>Your player swings <b>the moment you tap</b>. Watch the <b>timing ring</b> close around your feet and tap as it turns gold, with the ball just in front of you. Early contact pulls the ball across your body, late contact pushes it wide and short.</span></div>
-      <div><kbd>TOPSPIN</kbd><span>Fast, dipping drive that kicks up off the bounce.</span></div>
-      <div><kbd>SLICE</kbd><span>Low, skidding backspin. Hold the stick <b>toward yourself</b> while slicing for a drop shot.</span></div>
-      <div><kbd>LOB</kbd><span>High and deep over a player at the net.</span></div>
-      <div><kbd>AIM</kbd><span>The stick direction at contact steers the ball: left/right for angle, toward the net for deep, back for short.</span></div>
-      <div><kbd>SERVE</kbd><span>Tap any shot button to toss, tap again at the very top of the toss (the ring turns gold). TOPSPIN = flat bomb, SLICE = swinging slice, LOB = safe kick serve. Slide along the baseline before the toss, aim with the stick during it.</span></div>
-      <div><kbd>PERFECT</kbd><span>Perfect timing plus good footwork = a gold PERFECT shot with extra pace and pin-point accuracy. You will feel it in your hand too.</span></div>
-      <div><kbd>KEYS</kbd><span>WASD / arrows to move. J or Space topspin, K slice, L lob. Esc pauses. Gamepads work too.</span></div>
-      <div><kbd>SURFACES</kbd><span>Clay grips: high, slow bounce. Grass skids low and fast. Hard is honest.</span></div>
-    </div>
-    <p class="lede" style="margin-top:16px;font-size:11px">Netcord is made by TNQ Nexus. Every island, player, sound and line of game code was made for this game. 3D rendering by three.js (MIT License, © three.js authors).</p>`;
-    UI.open(html);
+  how(page = 0) {
+    const pages = [
+      ['Run and swing', [
+        ['MOVE', 'Drag anywhere on the left half to run. The <b>yellow ring</b> on the court is the spot to stand.'],
+        ['TAP', 'A circle closes onto where you will meet the ball. <b>Tap any shot button when it turns gold</b> and says TAP. Early pulls the ball across, late pushes it wide.'],
+        ['AIM', 'The stick at contact steers the ball: left or right for angle, toward the net for deep, back for short.'],
+        ['PERFECT', 'Gold timing plus good footwork gives a PERFECT shot with extra pace and pin-point accuracy.']]],
+      ['Your shots', [
+        ['TOPSPIN', 'Fast, dipping drive that kicks up off the bounce. Your everyday shot.'],
+        ['SLICE', 'Low, skidding backspin. Hold the stick <b>toward yourself</b> while slicing for a drop shot.'],
+        ['LOB', 'High and deep over a player at the net.'],
+        ['COURTS', 'Clay grips: high, slow bounce. Grass skids low and fast. Hard is honest.']]],
+      ['Serve and more', [
+        ['SERVE', 'Tap once to toss. A circle closes on the ball: <b>tap again when it turns gold</b> at the top. TOPSPIN is a flat bomb, SLICE swings wide, LOB is a safe kick serve.'],
+        ['PLACE', 'Slide along the baseline before the toss, aim with the stick during it.'],
+        ['KEYS', 'WASD or arrows to move. J or Space topspin, K slice, L lob. Esc pauses. Gamepads work too.'],
+        ['ABOUT', 'Netcord is made by TNQ Nexus. 3D rendering by three.js (MIT License).']]]
+    ];
+    const n = pages.length, P = pages[page];
+    let html = UI.head(`How to play · ${page + 1} / ${n}`, P[0]);
+    html += `<div class="how">` + P[1].map(([k, t]) => `<div><kbd>${k}</kbd><span>${t}</span></div>`).join('') + `</div>`;
+    html += `<div class="pager"><button class="btn ghost slim" id="how-prev" ${page === 0 ? 'disabled' : ''}>Back</button><span class="dots">${pages.map((_, i) => `<i class="${i === page ? 'on' : ''}"></i>`).join('')}</span><button class="btn primary slim" id="how-next">${page === n - 1 ? 'Got it' : 'Next'}</button></div>`;
+    const keep = UI.onClose; UI.onClose = null;
+    UI.open(html, root => {
+      UI.onClose = keep;
+      $('how-prev').onclick = () => { if (page > 0) { SFX.click(); UI.how(page - 1); } };
+      $('how-next').onclick = () => { SFX.click(); if (page < n - 1) UI.how(page + 1); else UI.close(); };
+      let x0 = null;
+      root.ontouchstart = e => { x0 = e.touches[0].clientX; };
+      root.ontouchend = e => { if (x0 == null) return; const dx = e.changedTouches[0].clientX - x0; x0 = null; if (dx < -50 && page < n - 1) UI.how(page + 1); else if (dx > 50 && page > 0) UI.how(page - 1); };
+    }, 'wide');
   },
   pause() {
     GAME.paused = true;
     let html = UI.head('Paused', 'Take a breather', false);
-    html += `<div style="display:grid;gap:8px;margin-top:14px">
-      <button class="btn primary" id="p-resume">Resume</button>
+    html += `<div class="pause-grid">
+      <button class="btn primary span" id="p-resume">Resume</button>
       <button class="btn ghost" id="p-settings">Settings</button>
       <button class="btn ghost" id="p-how">How to play</button>
       <button class="btn ghost" id="p-restart">Restart match</button>
@@ -179,33 +215,59 @@ const UI = {
     UI.open(html, () => {
       $('p-resume').onclick = () => { SFX.click(); UI.close(); GAME.paused = false; };
       $('p-settings').onclick = () => { SFX.click(); UI.settings(true); };
-      $('p-how').onclick = () => { SFX.click(); UI.how(); UI.onClose = () => UI.pause(); };
+      $('p-how').onclick = () => { SFX.click(); UI.onClose = () => UI.pause(); UI.how(); };
       $('p-restart').onclick = () => { SFX.click(); UI.close(); GAME.paused = false; GAME.startMatch(GAME.lastCfg); };
       $('p-quit').onclick = () => { SFX.click(); UI.close(); GAME.paused = false; GAME.toTitle(); };
-    });
+    }, 'narrow');
   },
   results(m, winner, unlocked) {
     const me = m.P[0], op = m.P[1], won = winner === 0;
     const sets = m.score.sets.map(s => `${s[0]}–${s[1]}`).join('  ');
     const pct = c => c.stats.firstTotal ? Math.round(100 * c.stats.firstIn / c.stats.firstTotal) + '%' : '–';
-    const rows = [['Aces', me.stats.aces, op.stats.aces], ['Double faults', me.stats.df, op.stats.df], ['Winners', me.stats.winners, op.stats.winners], ['Errors', me.stats.errors, op.stats.errors], ['1st serve in', pct(me), pct(op)], ['Perfect hits', me.stats.perfect, '–'], ['Points won', me.stats.points, op.stats.points]];
-    let html = UI.head(won ? 'Game, set and match' : 'Match complete', won ? 'You win' : `${op.name.split(' ')[0]} wins`, false);
-    html += `<div style="margin-top:8px;font:700 30px/1 var(--mono);color:var(--clay)">${sets}</div>`;
-    if (unlocked) html += `<p class="lede" style="margin-top:8px;color:var(--ink)"><b>${unlocked}</b></p>`;
-    html += `<div style="margin-top:14px;background:#13301f;color:#f4efe4;border-radius:16px;padding:12px 14px;font:500 12px/1 var(--mono)">
-      <div style="display:flex;justify-content:space-between;color:#86b394;letter-spacing:.14em;font-size:10px;padding-bottom:8px;border-bottom:1px solid #24503a"><span>STAT</span><span>YOU · ${op.short}</span></div>
-      ${rows.map(r => `<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #1d4230"><span style="color:#cfe0d4">${r[0]}</span><span><b style="color:#ffd84d">${r[1]}</b> · ${r[2]}</span></div>`).join('')}
-      <div style="display:flex;justify-content:space-between;padding:7px 0"><span style="color:#cfe0d4">Longest rally</span><span><b style="color:#ffd84d">${m.longest}</b> shots</span></div>
-    </div>`;
+    const rows = [['Aces', me.stats.aces, op.stats.aces], ['Double faults', me.stats.df, op.stats.df], ['Winners', me.stats.winners, op.stats.winners], ['Errors', me.stats.errors, op.stats.errors], ['1st serve in', pct(me), pct(op)], ['Perfect hits', me.stats.perfect, '–'], ['Points won', me.stats.points, op.stats.points], ['Longest rally', m.longest, '']];
     const nextRung = m.cfg.career != null && won && SAVE.career.rung < RIVALS.length;
-    html += `<div style="display:grid;gap:8px;margin-top:14px">
+    let html = UI.head(won ? 'Game, set and match' : 'Match complete', won ? 'You win' : `${op.name.split(' ')[0]} wins`, false);
+    html += `<div class="cols"><div class="col">
+      <div class="score-big">${sets}</div>
+      ${unlocked ? `<p class="lede" style="color:var(--ink)"><b>${unlocked}</b></p>` : ''}
+      <div class="stack">
       ${nextRung ? `<button class="btn primary" id="r-next">Next rival: ${RIVALS[SAVE.career.rung].name.split(' ')[0]}</button>` : ''}
       <button class="btn ${nextRung ? 'ghost' : 'primary'}" id="r-again">${won ? 'Play again' : 'Rematch'}</button>
-      <button class="btn clay" id="r-menu">Back to the clubhouse</button></div>`;
+      <button class="btn clay" id="r-menu">Back to the clubhouse</button></div></div>
+      <div class="col"><div class="stats"><div class="sh"><span>STAT</span><span>YOU · ${op.short}</span></div>
+      ${rows.map(r => `<div><span>${r[0]}</span><span><b>${r[1]}</b>${r[2] === '' ? ' shots' : ' · ' + r[2]}</span></div>`).join('')}</div></div></div>`;
     UI.open(html, () => {
       if (nextRung) $('r-next').onclick = () => { SFX.click(); UI.close(); const r = RIVALS[SAVE.career.rung]; GAME.startMatch({ court: r.court, rival: r, format: 'short', difficulty: SAVE.quick.difficulty, career: SAVE.career.rung, tod: SAVE.settings.tod }); };
       $('r-again').onclick = () => { SFX.click(); UI.close(); GAME.startMatch(GAME.lastCfg); };
       $('r-menu').onclick = () => { SFX.click(); UI.close(); GAME.toTitle(); };
-    });
+    }, 'wide');
+  }
+  ,
+  /* first-launch cards: move, tap on the gold, serve */
+  onboard(page = 0) {
+    const cards = [
+      ['Run to the ball', 'Drag anywhere on the left half of the screen to run. A yellow ring on the court shows the best spot to stand.', '<i class="pad"></i><i class="knob"></i>'],
+      ['Tap on the gold', 'A circle closes onto the spot where you meet the ball. Tap any shot button the moment it turns gold and says TAP.', '<i class="apr"></i><i class="tgt"></i><span class="tap">TAP</span>'],
+      ['Toss, then tap at the top', 'To serve, tap once to toss. Tap again when the circle over the ball turns gold, right at the top of the toss.', '<i class="sring"></i><i class="sball"></i>']
+    ];
+    const n = cards.length, C = cards[page], last = page === n - 1;
+    let html = UI.head(`Welcome to Netcord · ${page + 1} / ${n}`, page === 0 ? 'Three quick tips' : C[0], false, `<button class="btn ghost slim" id="ob-skip">Skip</button>`);
+    html += `<div class="onb"><div class="art">${C[2]}</div><div>${page === 0 ? `<h3>${C[0]}</h3>` : ''}<p>${C[1]}</p></div></div>`;
+    html += `<div class="pager"><button class="btn ghost slim" id="ob-prev" ${page === 0 ? 'disabled' : ''}>Back</button><span class="dots">${cards.map((_, i) => `<i class="${i === page ? 'on' : ''}"></i>`).join('')}</span><button class="btn ${last ? 'clay' : 'primary'} slim" id="ob-next">${last ? 'Try a practice rally' : 'Next'}</button></div>`;
+    const done = () => { SAVE.flags.intro = true; persist(); };
+    UI.open(html, root => {
+      $('ob-skip').onclick = () => { SFX.click(); done(); UI.close(); };
+      $('ob-prev').onclick = () => { if (page > 0) { SFX.click(); UI.onboard(page - 1); } };
+      $('ob-next').onclick = () => { SFX.unlock(); SFX.click(); if (!last) return UI.onboard(page + 1); done(); UI.close(); GAME.startTutorial(); };
+      let x0 = null;
+      root.ontouchstart = e => { x0 = e.touches[0].clientX; };
+      root.ontouchend = e => { if (x0 == null) return; const dx = e.changedTouches[0].clientX - x0; x0 = null; if (dx < -50 && !last) UI.onboard(page + 1); else if (dx > 50 && page > 0) UI.onboard(page - 1); };
+    }, 'wide');
+  },
+  tutorialDone(onPlay, onMenu) {
+    let html = UI.head('Practice complete', 'You are ready', false);
+    html += `<p class="lede" style="color:var(--ink)">Nice hitting. Keep watching for the gold circle and tap on it. You can replay this practice any time from Settings.</p>
+      <div class="pause-grid" style="margin-top:14px"><button class="btn clay span" id="td-play">Play your first match</button><button class="btn ghost span" id="td-menu">Back to the clubhouse</button></div>`;
+    UI.open(html, () => { $('td-play').onclick = () => { SFX.click(); UI.close(); onPlay(); }; $('td-menu').onclick = () => { SFX.click(); UI.close(); onMenu(); }; }, 'narrow');
   }
 };

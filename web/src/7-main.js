@@ -184,6 +184,18 @@ class Game {
     this.bindMenu();
     this.toTitle();
     this.loop();
+    this.splash();
+  }
+  /* TNQ Nexus splash, once per launch; tap to skip. First launch then shows the tips. */
+  splash() {
+    const el = $('splash'); if (!el) return;
+    let gone = false;
+    const end = () => {
+      if (gone) return; gone = true; el.classList.add('out'); setTimeout(() => el.remove(), 700);
+      if (!SAVE.flags.intro) setTimeout(() => { if (this.mode === 'title') UI.onboard(0); }, 450);
+    };
+    el.addEventListener('pointerdown', () => { SFX.unlock(); end(); });
+    setTimeout(end, 2500);
   }
   bindMenu() {
     const unlockAnd = f => () => { SFX.unlock(); SFX.click(); f(); };
@@ -293,7 +305,9 @@ class Game {
     const rival = pick(RIVALS.filter(r => r.id !== 'teodor'));
     this.match = new Match(this, { court: courtId, rival, format: 'match', demo: true, diff: DIFFICULTY.hard });
   }
+  startTutorial() { TUT.start(); }
   toTitle() {
+    TUT.stop(false); document.body.classList.remove('tut');
     this.mode = 'title'; this.paused = false;
     const court = SAVE.quick.court || 'clay';
     this.loadCourt(court); this.setTOD(SAVE.quick.tod === 'night' ? 'dusk' : SAVE.quick.tod || 'day');
@@ -307,11 +321,16 @@ class Game {
     this.mode = 'play'; this.paused = false;
     this.loadCourt(cfg.court); this.setTOD(cfg.tod || 'day');
     const diff = DIFFICULTY[cfg.difficulty || 'normal'];
-    this.match = new Match(this, { court: cfg.court, rival: cfg.rival, format: cfg.format || 'short', diff, career: cfg.career });
+    this.match = new Match(this, { court: cfg.court, rival: cfg.rival, format: cfg.format || 'short', diff, career: cfg.career, tutorial: !!cfg.tutorial });
+    document.body.classList.toggle('tut', !!cfg.tutorial);
+    if (!cfg.tutorial) TUT.stop(false);
     UI.hideTitle(); $('hud').classList.remove('hidden'); $('controls').classList.remove('hidden');
     this.camTarget.set(0, 0, 0.6); this.resize();
-    UI.callout(`${COURTS[cfg.court].short} · ${cfg.rival.name}`, (cfg.career != null ? `LADDER RUNG ${cfg.career + 1}` : FORMATS[cfg.format || 'short'].sub.toUpperCase()));
-    Umpire.say(`${cfg.rival.name.split(' ')[1]} to receive. Play.`);
+    if (cfg.tutorial) UI.callout('Practice', 'WITH ' + cfg.rival.name.toUpperCase());
+    else {
+      UI.callout(`${COURTS[cfg.court].short} · ${cfg.rival.name}`, (cfg.career != null ? `LADDER RUNG ${cfg.career + 1}` : FORMATS[cfg.format || 'short'].sub.toUpperCase()));
+      Umpire.say(`${cfg.rival.name.split(' ')[1]} to receive. Play.`);
+    }
     SFX.setAmbience(0.05);
     this.input.home();
   }
@@ -419,6 +438,57 @@ class Game {
 /* Touch devices hide the keyboard hints on the shot buttons. */
 const TOUCH = !!NATIVE || navigator.maxTouchPoints > 0 || (window.matchMedia && matchMedia('(pointer: coarse)').matches);
 if (TOUCH) document.body.classList.add('touch');
+/* Guided practice: serve once, then return three balls, then the real match.
+   Points don't count, the player runs for you, and a coach card explains each step. */
+const TUT = {
+  on: false, step: 0, hits: 0, prevAssist: null,
+  start() {
+    this.on = true; this.step = 0; this.hits = 0; this.serves = 0;
+    this.prevAssist = SAVE.settings.assist; SAVE.settings.assist = 'auto';
+    GAME.startMatch({ court: 'clay', rival: RIVALS[0], format: 'short', difficulty: 'easy', tutorial: true, tod: 'day' });
+    $('coach').classList.remove('hidden');
+    $('ck-skip').onclick = () => { SFX.click(); this.finish(); };
+    this.show();
+  },
+  show() {
+    const T = [
+      ['STEP 1 OF 3 · SERVE', 'Tap the big <b>TOSS</b> button. Then tap again when the circle over the ball turns <b>gold</b>.'],
+      ['STEP 2 OF 3 · RALLY', `Your player runs for you. When the ball comes back, tap a shot button as the circle turns <b>gold</b>. Returns: <b>${this.hits} / 3</b>`],
+      ['STEP 3 OF 3 · DONE', 'Great hitting. Get ready for your first match.']
+    ][this.step];
+    $('ck-step').textContent = T[0]; $('ck-text').innerHTML = T[1];
+  },
+  onServeIn() { if (this.on && this.step === 0) { this.step = 1; Haptics.notify && Haptics.notify('success'); this.show(); } },
+  onPoint(winner, kind) {
+    if (!this.on) return;
+    if (this.step === 0 && winner === 0) this.onServeIn();
+    if (this.step === 0 && kind === 'DOUBLE FAULT') { $('ck-text').innerHTML = 'Nearly. Wait for the circle to turn <b>gold</b> at the top of the toss, then tap.'; setTimeout(() => this.on && this.step === 0 && this.show(), 3500); }
+  },
+  onHumanReturn() {
+    if (!this.on) return;
+    if (this.step === 0) this.onServeIn();
+    if (this.step !== 1) return;
+    this.hits++; this.show();
+    if (this.hits >= 3) { this.step = 2; this.show(); setTimeout(() => this.on && this.finish(), 1400); }
+  },
+  stop(restoreTitle) {
+    if (!this.on) return;
+    this.on = false; $('coach').classList.add('hidden'); document.body.classList.remove('tut');
+    if (this.prevAssist) { SAVE.settings.assist = this.prevAssist; this.prevAssist = null; }
+    SAVE.flags.tut = true; persist();
+    if (restoreTitle) GAME.toTitle();
+  },
+  finish() {
+    if (!this.on) return;
+    this.stop(false); GAME.paused = true;
+    UI.tutorialDone(() => {
+      GAME.paused = false;
+      const i = Math.min(SAVE.career.rung, RIVALS.length - 1), r = RIVALS[i];
+      GAME.startMatch({ court: r.court, rival: r, format: 'short', difficulty: SAVE.quick.difficulty, career: i, tod: SAVE.settings.tod });
+    }, () => { GAME.paused = false; GAME.toTitle(); });
+  }
+};
+
 let GAME = null;
 window.addEventListener('DOMContentLoaded', () => { GAME = new Game(); window.GAME = GAME; });
 if (document.readyState !== 'loading') { GAME = new Game(); window.GAME = GAME; }

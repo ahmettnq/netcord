@@ -179,6 +179,7 @@ class Match {
     return { x: this.boxSign() * 2.9, z: rc.side * (COURT.HL + deep) };
   }
   currentServer() {
+    if (this.cfg.tutorial && typeof TUT !== 'undefined') return TUT.step >= 1 ? 1 : 0;   // practice: you serve first, then Pip feeds you
     const s = this.score;
     if (!s.tb) return this.server;
     const k = s.p[0] + s.p[1];
@@ -251,7 +252,12 @@ class Match {
         ball.v.y -= GRAV * dt; ball.p.y += ball.v.y * dt;
         if (!sv.isAI) {
           this.showServeAim(sv, stick);
-          UI.tossMeter(clamp((ball.p.y - 1.4) / (this.toss.apex - 1.4), 0, 1), Math.abs(ball.p.y - this.toss.apex) < 0.16);
+          // seconds until the ideal tap (the strings arrive as the toss peaks)
+          const sw = SAVE.settings.assist === 'off' ? 1 : 1.35, W = this.timing();
+          const te = (ball.v.y + GRAV * TAP_LAG * this.simScale() - GRAV * STROKES.serve.contact) / GRAV;
+          const good = Math.abs(te) <= Math.max(W.p * 1.2 * sw, W.w * 0.5 * sw);
+          UI.tossMeter(clamp(1 - te / 0.5, 0, 1), good);
+          if (!this.toss.hit && te > -W.w * sw) UI.cue({ x: ball.p.x, y: this.toss.apex, z: ball.p.z }, Math.max(0, te) / 0.5, good); else UI.cue(null);
         } else if (ball.v.y <= GRAV * STROKES.serve.contact + 0.1 && !this.toss.hit) {
           this.toss.hit = true; this.serveSwing(sv, 'top', 1 - rand(0, 0.25) * (1 - sv.profile.accuracy));
         }
@@ -283,7 +289,7 @@ class Match {
           this.swingUpdate(c, dt);
         }
         if (this.state === 'dead' && this.stateT > 2.1) this.nextPoint();
-        if (this.state === 'live' && !H.isAI) this.updateGuides(stick);
+        if (this.state === 'live' && !H.isAI) this.updateGuides(stick); else if (this.state !== 'toss') UI.cue(null);
         break;
       }
       case 'over': {
@@ -374,7 +380,7 @@ class Match {
     const perfect = !sv.isAI && q > 0.86;
     if (!ch.act || ch.act.kind !== 'serve' || ch.act.prep) ch.strike('serve', 2.6);
     this.ballFromStrings(sv);
-    const second = this.serveNum === 2;
+    const second = this.serveNum === 2 || (this.cfg.tutorial && sv.isAI);   // practice feeds are gentle
     const bs = this.boxSign();
     let aimX = 0;
     if (!sv.isAI) aimX = this.game.input.worldStick().x * (sv.side > 0 ? 1 : -1);
@@ -442,8 +448,9 @@ class Match {
       const vy = this.ball.v.y + GRAV * lag - GRAV * STROKES.serve.contact; // toss velocity when the strings arrive
       const te = Math.abs(vy) / GRAV;                    // seconds away from the apex
       const W = this.timing();
-      let q = clamp(1 - Math.pow(te / (W.w * 2.2), 1.3), 0, 1);
-      if (te <= W.p * 1.2) q = 1;
+      const sw = SAVE.settings.assist === 'off' ? 1 : 1.35;   // Assist and Auto-run: a friendlier toss window
+      let q = clamp(1 - Math.pow(te / (W.w * 2.2 * sw), 1.3), 0, 1);
+      if (te <= W.p * 1.2 * sw) q = 1;
       if (this.ball.p.y < 1.95) q = Math.min(q, 0.25);
       this.toss.hit = true;
       const label = q >= 1 || q > 0.6 ? null : vy > 0 ? 'EARLY' : 'LATE';
@@ -628,8 +635,16 @@ class Match {
   updateGuides(stick) {
     const v = this.view, H = this.human;
     v.landRing.material.opacity = 0; v.spotRing.material.opacity = 0; v.aimRing.material.opacity = 0;
-    if (!SAVE.settings.guides) { v.timeRing.material.opacity = 0; return; }
+    if (!SAVE.settings.guides) { v.timeRing.material.opacity = 0; if (this.state !== 'toss') UI.cue(null); return; }
     const pl = H.plan, cue = this.timingCue();
+    // tap cue for rallies: the approach circle sits where the ball will be met
+    if (this.state !== 'toss') {
+      if (cue && cue.dt < 0.85 && cue.dt > -cue.W.w * 0.6) {
+        const good = Math.abs(cue.dt) <= Math.max(cue.W.p * 1.6, cue.W.w * 0.35);
+        UI.cue(cue.at.p || cue.at, Math.max(0, cue.dt) / 0.85, good);
+        UI.tossMeter(clamp(1 - cue.dt / 0.85, 0, 1), good);
+      } else { UI.cue(null); if (this.state === 'live') UI.tossMeter(0, false); }
+    }
     if (this.hitter === 1 && pl && !pl.leave && pl.t > this.time - 0.2 && !(H.swing && !H.swing.whiff)) {
       const at = cue ? H.char.pos : pl.stand;
       let scale = 1.25, op = 0.28, col = 0xffffff;
@@ -812,6 +827,7 @@ class Match {
   }
 
   onHit(c) {
+    if (this.cfg.tutorial && typeof TUT !== 'undefined') { if (c.i === 1) TUT.onServeIn(); else if (!this.isServe) TUT.onHumanReturn(); }
     // the other side plans its response
     const o = this.P[1 - c.i];
     o.plan = null; o.planAt = this.time + (o.isAI ? this.aiReaction(o) : 0);
@@ -909,6 +925,14 @@ class Match {
 
   pointTo(w, kind, detail, df) {
     if (this.state !== 'live') return;
+    if (this.cfg.tutorial) {
+      // practice: nothing is scored, the player serves again
+      this.state = 'dead'; this.stateT = 0.6; this.faultPending = false; this.serveNum = 1;
+      UI.callout(w === 0 ? 'Nice' : 'Again', kind === 'OUT' || kind === 'NET' ? (detail || kind) : kind);
+      if (typeof TUT !== 'undefined') TUT.onPoint(w, kind);
+      if (window.DBG) window.DBG.push({ w, kind, detail });
+      return;
+    }
     this.state = 'dead'; this.stateT = 0; this.faultPending = false;
     if (!df) this.serveNum = 1;
     const l = 1 - w, W = this.P[w], L = this.P[l];

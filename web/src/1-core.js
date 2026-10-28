@@ -95,7 +95,8 @@ const DEFAULT_SAVE = {
   settings: { speed: 'normal', assist: 'assist', pixel: 0, quality: 'auto', cam: 'diorama', sfx: true, voice: true, guides: true, haptics: true, tod: 'day' },
   career: { rung: 0 },
   quick: { court: 'clay', rival: 'marisol', difficulty: 'normal', format: 'short', tod: 'day' },
-  stats: { played: 0, won: 0, aces: 0, longest: 0, fastest: 0 }
+  stats: { played: 0, won: 0, aces: 0, longest: 0, fastest: 0 },
+  flags: { intro: false, tut: false }
 };
 function loadSave() {
   let s = null;

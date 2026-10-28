@@ -888,6 +888,20 @@ function buildClub(scene, courtId) {
     update(dt, t, ball) {
       crowd.update(dt, ball);
       for (const c of clouds) { c.position.x += dt * c.userData.v; if (c.position.x > 62) c.position.x = -62; }
+      // a cloud drifting between the camera and the court fades out so it never smears over the players
+      const cam = window.GAME && GAME.camera; if (!cam) return;
+      const v = this._cv || (this._cv = new THREE.Vector3()), cv = this._cc || (this._cc = new THREE.Vector3());
+      let x0 = 9, x1 = -9, y0 = 9, y1 = -9;
+      for (const [px, pz] of [[-7, -14], [7, -14], [7, 14], [-7, 14]]) { v.set(px, 0, pz).project(cam); x0 = Math.min(x0, v.x); x1 = Math.max(x1, v.x); y0 = Math.min(y0, v.y); y1 = Math.max(y1, v.y); }
+      const zCourt = v.set(0, 0, 0).project(cam).z, halfW = (cam.right - cam.left) / (2 * (cam.zoom || 1));
+      for (const c of clouds) {
+        c.getWorldPosition(cv); v.copy(cv).project(cam); const near = v.z < zCourt;
+        const rx = (c.scale.x * 0.42) / halfW, ry = (c.scale.y * 0.42) / ((cam.top - cam.bottom) / (2 * (cam.zoom || 1)));
+        const over = near && v.x + rx > x0 && v.x - rx < x1 && v.y + ry > y0 && v.y - ry < y1;
+        const want = over ? 0 : 0.82;
+        c.material.opacity += (want - c.material.opacity) * Math.min(1, dt * 3);
+        c.visible = c.material.opacity > 0.02;
+      }
     },
     dispose() {
       crowd.dispose(root);

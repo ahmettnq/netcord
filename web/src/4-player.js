@@ -209,7 +209,29 @@ class Character {
     const ring = new THREE.Mesh(GEO.hoop, lmat(rc)); ring.rotation.y = Math.PI / 2; ring.scale.set(0.13, 0.175, 0.13); ring.castShadow = true; hoop.add(ring);
     const strings = new THREE.Mesh(GEO.disc, new THREE.MeshLambertMaterial({ color: 0xf2efe6, transparent: true, opacity: 0.45, side: THREE.DoubleSide }));
     strings.rotation.y = Math.PI / 2; strings.scale.set(0.125, 0.168, 1); hoop.add(strings);
+    // soft contact shadow under the feet so the figure reads as standing on the court
+    const blob = this.blob = new THREE.Group();
+    for (const [r, o] of [[0.62, 0.13], [0.44, 0.14], [0.27, 0.16]]) {
+      const d = new THREE.Mesh(new THREE.CircleGeometry(r, 28), new THREE.MeshBasicMaterial({ color: 0x1e140c, transparent: true, depthWrite: false, opacity: o }));
+      d.rotation.x = -Math.PI / 2; d.renderOrder = 2; blob.add(d);
+    }
+    blob.position.y = 0.03;
+    root.add(blob);
+    this._sole = [this.knR.children[3], this.knL.children[3]];
     this.applyPose();
+  }
+  /* Keep the lowest sole on the court: whatever the legs and hips are doing,
+     shift the whole body so one foot is always planted (jumps go through the
+     root offset, not through this). */
+  plantFeet() {
+    const v = this._fv || (this._fv = new THREE.Vector3());
+    this.body.position.y = 0;
+    this.root.updateMatrixWorld(true);
+    let mn = Infinity;
+    for (const t of this._sole) for (const z of [-0.068, 0.068]) {
+      v.set(0, -0.011, z); t.localToWorld(v); this.root.worldToLocal(v); if (v.y < mn) mn = v.y;
+    }
+    if (mn < Infinity) { this.body.position.y = -mn; this.root.updateMatrixWorld(true); }
   }
   /* world-space side of the forehand: +1 means the forehand is on the player's right */
   get fhSign() { return this.lefty ? -1 : 1; }
@@ -228,6 +250,7 @@ class Character {
     this.thR.rotation.set(p[I.thRx], 0, p[I.thRz]); this.knR.rotation.set(p[I.knR], 0, 0);
     this.thL.rotation.set(p[I.thLx], 0, p[I.thLz]); this.knL.rotation.set(p[I.knL], 0, 0);
     this.body.rotation.y = p[I.rootRy];
+    if (this._sole) this.plantFeet();
   }
   /* --- actions --- */
   prep(kind) { if (this.act && this.act.kind === kind && this.act.prep) return; this.act = { kind, clip: STROKES[kind], t: 0, prep: true, w: this.act ? this.act.w : 0 }; }
@@ -296,6 +319,21 @@ class Character {
       if (dy < -0.02 || adj.hipY < 0) { adj.hipY = clamp(adj.hipY + dy / 1.42, -0.3, 0); probe(H); }
     } else {
       probe(H);
+      // ball below the strings (a late tap): sink the knees, then tip the arm forward a touch
+      if (T.y < H.y - 0.015) {
+        for (let it = 0; it < 3; it++) {
+          const dy = T.y - H.y; if (Math.abs(dy) < 0.015) break;
+          const h0 = H.y; adj.hipY -= 0.1; probe(H2); adj.hipY += 0.1;
+          const d = (H2.y - h0) / -0.1; if (Math.abs(d) < 0.05) break;
+          adj.hipY = clamp(adj.hipY + dy / d, -0.4, 0); probe(H);
+        }
+        for (let it = 0; it < 3; it++) {
+          const dy = T.y - H.y; if (dy > -0.015) break;
+          adj.shRx += 0.12; probe(H2); adj.shRx -= 0.12;
+          const d = (H2.y - H.y) / 0.12; if (Math.abs(d) < 0.08) break;
+          adj.shRx = clamp(adj.shRx + clamp(dy / d, -0.4, 0.4), 0, 0.25); probe(H);
+        }
+      }
       jump = clamp(T.y - H.y, 0, a.kind === 'smash' ? 0.6 : 0);
     }
     let ox = T.x - H.x, oz = T.z - H.z; const L = Math.hypot(ox, oz), M = 1.35;
@@ -425,6 +463,7 @@ class Character {
     }
     this.applyPose();
     this.root.position.set(this.pos.x + vo.x, vo.y, this.pos.z + vo.z);
+    if (this.blob) { const r = this.root.scale.x; this.blob.position.y = (0.03 - vo.y) / r; const bs = 1 / (1 + vo.y * 1.5); this.blob.scale.set(bs, 1, bs * 0.85); }
   }
   racketHead(out) { this.racket.children[2].getWorldPosition(out); return out; }
 }
