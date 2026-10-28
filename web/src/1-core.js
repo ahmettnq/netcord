@@ -152,6 +152,7 @@ class Audio {
       this.startAmbience();
     }
     if (this.ctx.state === 'suspended') this.ctx.resume();
+    if (typeof Umpire !== 'undefined') Umpire.load();
   }
   get ok() { return this.ctx && this.enabled; }
   noise(dur, freq, q, gain, type = 'bandpass', when = 0) {
@@ -234,8 +235,53 @@ const SFX = new Audio();
 
 /* Chair umpire voice through the platform speech engine (works in iOS WebView). */
 const Umpire = {
+  buf: null, loading: false, live: [], last: null,
+  /* Recorded umpire words (UMPIRE_CLIPS in 8-voice.js), decoded once the audio engine is unlocked. */
+  load() {
+    if (this.buf || this.loading || !SFX.ctx || typeof UMPIRE_CLIPS === 'undefined') return;
+    this.loading = true; const ctx = SFX.ctx, out = {}; let left = 0;
+    const done = () => { if (--left <= 0) { this.buf = out; this.loading = false; } };
+    for (const [w, b64] of Object.entries(UMPIRE_CLIPS)) {
+      left++;
+      try {
+        const bin = atob(b64), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+        const ok = b => { out[w] = b; done(); }, bad = () => done();
+        const p = ctx.decodeAudioData(u8.buffer, ok, bad); if (p && p.catch) p.catch(bad);
+      } catch (e) { done(); }
+    }
+  },
+  /* Turn a call like "Game, set and match, Rowe." into recorded words with natural gaps.
+     Returns false (so the speech engine takes over) if any word has no recording. */
+  clips(text) {
+    if (!this.buf || !SFX.ctx || !SFX.enabled) return false;
+    const NUM = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen'];
+    const toks = (String(text).toLowerCase().match(/[a-z0-9']+|[,.;:!?]+/g) || []).map(t => /^\d+$/.test(t) ? (NUM[+t] || t) : t);
+    const seq = []; let gap = 0;
+    for (let i = 0; i < toks.length; i++) {
+      const t = toks[i];
+      if (/^[,;:]+$/.test(t)) { gap = Math.max(gap, 0.17); continue; }
+      if (/^[.!?]+$/.test(t)) { gap = Math.max(gap, 0.34); continue; }
+      let w = t, two = toks[i + 1] ? t + ' ' + toks[i + 1] : null;
+      if (two && this.buf[two]) { w = two; i++; }
+      if (!this.buf[w]) return false;
+      seq.push([w, gap]); gap = 0.04;
+    }
+    if (!seq.length) return false;
+    for (const s of this.live) { try { s.stop(); } catch (e) { /* already ended */ } }
+    this.live = [];
+    const c = SFX.ctx; let t = c.currentTime + 0.03;
+    const g = c.createGain(); g.gain.value = 1.15; g.connect(SFX.master);
+    for (const [w, gp] of seq) {
+      const b = this.buf[w], s = c.createBufferSource(); s.buffer = b; s.connect(g);
+      t += gp; s.start(t); this.live.push(s); t += Math.max(0.1, b.duration - 0.05);
+    }
+    this.last = seq.map(x => x[0]).join(' ');
+    return true;
+  },
   say(text) {
     if (!SAVE.settings.voice || !SAVE.settings.sfx) return;
+    this.load();
+    if (this.clips(text)) return;
     try { if (NATIVE && NATIVE.speak) { NATIVE.speak.postMessage(text); return; } } catch (e) { /* fall through */ }
     try {
       const ss = window.speechSynthesis; if (!ss) return;
