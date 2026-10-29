@@ -180,7 +180,11 @@ class Game {
     this.last = performance.now(); this.t = 0; this.ambT = 0; this.acc = 0; this.stopT = 0; this.punchAmt = 0; this.resScale = 1;
     this.applySettings();
     window.addEventListener('resize', () => this.resize());
-    document.addEventListener('visibilitychange', () => { if (document.hidden) { if (this.mode === 'play' && !this.paused) UI.pause(); if (SFX.ctx) SFX.ctx.suspend(); } else if (SFX.ctx) SFX.ctx.resume(); });
+    document.addEventListener('visibilitychange', () => { if (document.hidden) { if (this.mode === 'play' && !this.paused) UI.pause(); if (SFX.ctx) try { SFX.ctx.suspend(); } catch (e) { /* gone */ } } else SFX.wake(); });
+    window.addEventListener('pageshow', () => SFX.wake()); window.addEventListener('focus', () => SFX.wake());
+    // any touch anywhere restarts the audio engine if iOS stopped it
+    document.addEventListener('pointerdown', () => { if (SFX.ctx) SFX.wake(); }, true);
+    window.__netcordForeground = () => { SFX.wake(); };
     this.bindMenu();
     this.toTitle();
     this.loop();

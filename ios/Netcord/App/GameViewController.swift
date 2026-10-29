@@ -50,6 +50,26 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     override func viewDidLoad() {
         super.viewDidLoad()
         loadGame()
+        // Locking the phone or a phone call stops the audio session; restart it
+        // when the app is back in front and let the page wake its audio engine.
+        let nc = NotificationCenter.default
+        nc.addObserver(self, selector: #selector(appBecameActive), name: UIApplication.didBecomeActiveNotification, object: nil)
+        nc.addObserver(self, selector: #selector(audioInterrupted(_:)), name: AVAudioSession.interruptionNotification, object: AVAudioSession.sharedInstance())
+    }
+
+    @objc private func appBecameActive() { reviveAudio() }
+
+    @objc private func audioInterrupted(_ note: Notification) {
+        guard let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+              AVAudioSession.InterruptionType(rawValue: raw) == .ended else { return }
+        reviveAudio()
+    }
+
+    private func reviveAudio() {
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.ambient, mode: .default, options: [.mixWithOthers])
+        try? session.setActive(true)
+        webView?.evaluateJavaScript("window.__netcordForeground && window.__netcordForeground()", completionHandler: nil)
     }
 
     private func loadGame() {

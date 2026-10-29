@@ -153,9 +153,28 @@ class Audio {
       for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
       this.startAmbience();
     }
-    if (this.ctx.state === 'suspended') this.ctx.resume();
+    this.wake();
     if (typeof Umpire !== 'undefined') Umpire.load();
     this.loadHit();
+  }
+  /* iOS stops the audio engine when the phone locks or a call comes in, and
+     reports it as 'interrupted' or 'suspended'. Every tap tries to restart it;
+     if it will not come back, the engine is rebuilt from scratch. */
+  wake() {
+    const c = this.ctx; if (!c) return;
+    if (c.state === 'running') { this._wakeFails = 0; return; }
+    if (c.state === 'closed') return this.rebuild();
+    let p = null; try { p = c.resume(); } catch (e) { /* older WebKit */ }
+    const check = () => { if (this.ctx !== c) return; if (c.state === 'running') { this._wakeFails = 0; return; } if (++this._wakeFails >= 2) this.rebuild(); };
+    this._wakeFails = this._wakeFails || 0;
+    if (p && p.then) p.then(() => setTimeout(check, 250), () => setTimeout(check, 50)); else setTimeout(check, 300);
+  }
+  rebuild() {
+    const old = this.ctx; this.ctx = null; this.master = null; this.amb = null; this.hitBuf = null; this._hitLoading = false; this._wakeFails = 0;
+    try { if (old && old.state !== 'closed') old.close(); } catch (e) { /* already gone */ }
+    if (typeof Umpire !== 'undefined') { Umpire.buf = null; Umpire.loading = false; Umpire.live = []; }
+    this.unlock();
+    if (typeof GAME !== 'undefined' && GAME && GAME.mode === 'play') this.setAmbience(0.05); else this.setAmbience(0.025);
   }
   /* the recorded racket strike (HIT_CLIP in 8-voice.js); the synth below stays as the fallback and adds weight */
   loadHit() {
@@ -262,12 +281,19 @@ const Umpire = {
   load() {
     if (this.buf || this.loading || !SFX.ctx || typeof UMPIRE_CLIPS === 'undefined') return;
     this.loading = true; const ctx = SFX.ctx, out = {}; let left = 0;
-    const done = () => { if (--left <= 0) { this.buf = out; this.loading = false; } };
+    const done = () => {
+      if (--left > 0 || ctx !== SFX.ctx) return;
+      this.buf = out; this.loading = false;
+      // a call made while the clips were still loading plays now, if it is still fresh
+      const q = this.pending; this.pending = null;
+      if (q && performance.now() - q.at < 1500) this.clips(q.text);
+    };
     for (const [w, b64] of Object.entries(UMPIRE_CLIPS)) {
       left++;
       try {
         const bin = atob(b64), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
-        const ok = b => { out[w] = b; done(); }, bad = () => done();
+        let fin = false;
+        const ok = b => { if (fin) return; fin = true; out[w] = b; done(); }, bad = () => { if (fin) return; fin = true; done(); };
         const p = ctx.decodeAudioData(u8.buffer, ok, bad); if (p && p.catch) p.catch(bad);
       } catch (e) { done(); }
     }
@@ -304,6 +330,12 @@ const Umpire = {
     if (!SAVE.settings.voice || !SAVE.settings.sfx) return;
     this.load();
     if (this.clips(text)) return;
+    if (typeof UMPIRE_CLIPS !== 'undefined') {
+      // the recorded voice is in the app: wait for it to finish loading rather than
+      // switching to the robotic system voice; calls it has no words for stay silent
+      if (!this.buf) this.pending = { text, at: performance.now() };
+      return;
+    }
     try { if (NATIVE && NATIVE.speak) { NATIVE.speak.postMessage(text); return; } } catch (e) { /* fall through */ }
     try {
       const ss = window.speechSynthesis; if (!ss) return;
